@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AWQI - Environmental Monitoring</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="../css/styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+</head>
+<body>
+    <header>
+        <h1>AWQI - Environmental Monitoring</h1>
+    </header>
+
+    <main>
+        <section class="location-bar" role="search" aria-label="Location and date selection">
+            <div class="location-label">
+                <h4>Location Search</h4>
+            </div>
+            <div>
+                <select id="stateSelect" class="select-bar" aria-label="Select State">
+                    <option value="">Select State</option>
+                    <option value="Andhra Pradesh">Andhra Pradesh</option>
+                    <option value="Arunachal Pradesh">Arunachal Pradesh</option>
+                    <option value="Assam">Assam</option>
+                    <option value="Bihar">Bihar</option>
+                    <option value="Chhattisgarh">Chhattisgarh</option>
+                    <option value="Goa">Goa</option>
+                    <option value="Gujarat">Gujarat</option>
+                    <option value="Haryana">Haryana</option>
+                    <option value="Himachal Pradesh">Himachal Pradesh</option>
+                    <option value="Jharkhand">Jharkhand</option>
+                    <option value="Karnataka">Karnataka</option>
+                    <option value="Kerala">Kerala</option>
+                    <option value="Madhya Pradesh">Madhya Pradesh</option>
+                    <option value="Maharashtra">Maharashtra</option>
+                    <option value="Manipur">Manipur</option>
+                    <option value="Meghalaya">Meghalaya</option>
+                    <option value="Mizoram">Mizoram</option>
+                    <option value="Nagaland">Nagaland</option>
+                    <option value="Odisha">Odisha</option>
+                    <option value="Punjab">Punjab</option>
+                    <option value="Rajasthan">Rajasthan</option>
+                    <option value="Sikkim">Sikkim</option>
+                    <option value="Tamil Nadu">Tamil Nadu</option>
+                    <option value="Telangana">Telangana</option>
+                    <option value="Tripura">Tripura</option>
+                    <option value="Uttar Pradesh">Uttar Pradesh</option>
+                    <option value="Uttarakhand">Uttarakhand</option>
+                    <option value="West Bengal">West Bengal</option>
+                </select>
+            </div>
+            <div>
+                <select id="districtSelect" class="select-bar" disabled aria-label="Select District">
+                    <option value="">Select District</option>
+                </select>
+            </div>
+            <div>
+                <select id="mandalSelect" class="select-bar" disabled aria-label="Select Mandal">
+                    <option value="">Select Mandal</option>
+                </select>
+            </div>
+            <div>
+                <input type="date" id="dateInput" class="select-bar" aria-label="Select Date">
+            </div>
+            <div>
+                <input type="time" id="timeInput" class="select-bar" aria-label="Select Time">
+            </div>
+            <div>
+                <button id="searchBtn" aria-label="Search">
+                    <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M15.5 14h-.79l-.28-.27a6.5 6.5 0 0 0 1.48-5.34c-.47-2.78-2.79-5-5.59-5.34a6.505 6.505 0 0 0-7.27 7.27c.34 2.8 2.56 5.12 5.34 5.59a6.5 6.5 0 0 0 5.34-1.48l.27.28v.79l4.25 4.25c.41.41 1.08.41 1.49 0 .41-.41.41-1.08 0-1.49L15.5 14zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
+                    </svg>
+                </button>
+            </div>
+        </section>
+
+        <section class="cards-section" aria-label="City selection carousel">
+            <div id="cityCarousel" class="carousel"></div>
+        </section>
+
+        <section class="location-details" id="locationDetails" aria-label="Current location details">
+            <h4>Current Location</h4>
+            <p id="locationInfo">Loading location details...</p>
+        </section>
+
+        <section class="map-status-section" aria-label="Map and environmental status">
+            <div class="map-section">
+                <h4>AQI Map</h4>
+                <div class="aqi-map" id="aqiMap" role="region" aria-label="AQI map"></div>
+            </div>
+            <div class="status-section">
+                <div aria-label="AQI status">
+                    <h4>AQI</h4>
+                    <p>Status: <span id="aqiStatus">Loading...</span></p>
+                    <p>Value: <span id="aqiValue">Loading...</span></p>
+                </div>
+                <div aria-label="WQI status">
+                    <h4>WQI</h4>
+                    <p>Status: <span id="wqiStatus">Loading...</span></p>
+                    <p>Value: <span id="wqiValue">Loading...</span></p>
+                </div>
+                <div aria-label="Sustainability Index status">
+                    <h4>Sustainability Index</h4>
+                    <p>Status: <span id="siStatus">Loading...</span></p>
+                    <p>Value: <span id="siValue">Loading...</span></p>
+                </div>
+            </div>
+        </section>
+
+        <section class="notice-section" id="noticeSection" aria-label="Suggestions">
+            <h4>Recommendations</h4>
+            <p  id="suggestions-list" ><span  class="suggestions">Loading suggestions...</span></p>
+        </section>
+
+        <section class="aqi-visual-section" aria-label="AQI visualization">
+            <div>
+                <h4>AQI Composition</h4>
+                <canvas id="aqiChart" aria-label="AQI pie chart"></canvas>
+            </div>
+            <div>
+                <h4>AQI Trends</h4>
+                <table id="aqiTable" aria-label="AQI trends table">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>PM2.5</th>
+                            <th>PM10</th>
+                            <th>O3</th>
+                            <th>NO2</th>
+                            <th>SO2</th>
+                            <th>CO</th>
+                            <th>NH3</th>
+                            <th>Pb</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="wqi-visual-section" aria-label="WQI visualization">
+            <div>
+                <h4>WQI Composition</h4>
+                <canvas id="wqiChart" aria-label="WQI pie chart"></canvas>
+            </div>
+            <div>
+                <h4>WQI Trends</h4>
+                <table id="wqiTable" aria-label="WQI trends table">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Temperature</th>
+                            <th>Turbidity</th>
+                            <th>pH</th>
+                            <th>TDS</th>
+                            <th>DO</th>
+                            <th>BOD</th>
+                            <th>Nutrients</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="stats-section" aria-label="AQI statistics">
+            <h4>AQI Reference</h4>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Range</th>
+                        <th>Remark</th>
+                        <th>Color</th>
+                        <th>Description</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr><td>0-50</td><td>Good</td><td style="background: #48bb78; color: #fff;">Green</td><td>Minimal impact</td></tr>
+                    <tr><td>51-100</td><td>Satisfactory</td><td style="background: #ecc94b; color: #fff;">Yellow</td><td>Minor breathing discomfort to sensitive people</td></tr>
+                    <tr><td>101-200</td><td>Moderate</td><td style="background: #ed8936; color: #fff;">Orange</td><td>Breathing discomfort to people with lungs, asthma, and heart diseases</td></tr>
+                    <tr><td>201-300</td><td>Poor</td><td style="background: #f56565; color: #fff;">Red</td><td>Breathing discomfort to most people on prolonged exposure</td></tr>
+                    <tr><td>301-400</td><td>Very Poor</td><td style="background: #9f7aea; color: #fff;">Purple</td><td>Respiratory illness on prolonged exposure</td></tr>
+                    <tr><td>401-500</td><td>Severe</td><td style="background: #742a2a; color: #fff;">Maroon</td><td>Affects healthy people and seriously impacts those with existing diseases</td></tr>
+                </tbody>
+            </table>
+        </section>
+
+        <section class="stats-section" aria-label="WQI statistics">
+            <h4>WQI Reference</h4>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Range</th>
+                        <th>Remark</th>
+                        <th>Color</th>
+                        <th>Description</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr><td>0-25</td><td>Excellent</td><td style="background: #48bb78; color: #fff;">Green</td><td>Excellent water should be free from visible impurities, sediments, or cloudiness.</td></tr>
+                    <tr><td>26-50</td><td>Good</td><td style="background: #ecc94b; color: #fff;">Yellow</td><td>Refers to water that is clean, safe, and suitable for its intended use.</td></tr>
+                    <tr><td>51-75</td><td>Poor</td><td style="background: #ed8936; color: #fff;">Orange</td><td>Presence of contaminants, pollutants, or other issues that make the water unsuitable.</td></tr>
+                    <tr><td>76-100</td><td>Very Poor</td><td style="background: #f56565; color: #fff;">Red</td><td>Quality poses serious health, environmental, and safety concerns.</td></tr>
+                    <tr><td>Above 100</td><td>Unsuitable</td><td style="background: #742a2a; color: #fff;">Maroon</td><td>Contaminated to an extreme degree and is unsafe for virtually all purposes.</td></tr>
+                </tbody>
+            </table>
+        </section>
+
+        <section class="stats-section" aria-label="Sustainability Index statistics">
+            <h4>Sustainability Index Reference</h4>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Range</th>
+                        <th>Remark</th>
+                        <th>Color</th>
+                        <th>Description</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr><td>80-100</td><td>Excellent</td><td style="background: #48bb78; color: #fff;">Green</td><td>Highly sustainable environment, safe for all activities.</td></tr>
+                    <tr><td>60-79</td><td>Good</td><td style="background: #ecc94b; color: #fff;">Yellow</td><td>Generally sustainable, minor improvements needed.</td></tr>
+                    <tr><td>40-59</td><td>Moderate</td><td style="background: #ed8936; color: #fff;">Orange</td><td>Moderate sustainability, caution advised for sensitive groups.</td></tr>
+                    <tr><td>20-39</td><td>Poor</td><td style="background: #f56565; color: #fff;">Red</td><td>Low sustainability, significant action required.</td></tr>
+                    <tr><td>0-19</td><td>Critical</td><td style="background: #742a2a; color: #fff;">Maroon</td><td>Unsustainable environment, immediate action needed.</td></tr>
+                </tbody>
+            </table>
+        </section>
+    </main>
+
+    <footer>
+        <p>© 2025 Air Water Quality Index and Environmental Monitoring</p>
+    </footer>
+    <script src="../js/main.js"></script>
+</body>
+</html>
