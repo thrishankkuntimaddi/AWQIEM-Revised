@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AWQI - Environmental Monitoring</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header Section -->
+        <header>
+            <h1>AWQI Environmental Monitoring</h1>
+            <p>Real-time Air and Water Quality Index Monitoring System</p>
+        </header>
+
+        <!-- Location Selection Form -->
+        <div class="location-form">
+            <div class="form-group">
+                <label for="stateSelect">State</label>
+                <select id="stateSelect" required>
+                    <option value="">Select State</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="districtSelect">District</label>
+                <select id="districtSelect" disabled required>
+                    <option value="">Select District</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="mandalSelect">Mandal</label>
+                <select id="mandalSelect" disabled>
+                    <option value="">Select Mandal</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="dateInput">Date</label>
+                <input type="date" id="dateInput" required>
+            </div>
+            <div class="form-group">
+                <label for="timeInput">Time</label>
+                <input type="time" id="timeInput" required>
+            </div>
+            <button id="searchBtn" class="search-btn">
+                <i class="fas fa-search"></i> Search
+            </button>
+        </div>
+
+        <!-- Popular Locations Carousel -->
+        <div class="carousel-section">
+            <h2>Popular Locations</h2>
+            <div id="cityCarousel" class="carousel"></div>
+        </div>
+
+        <!-- Location Section -->
+        <section class="location-section">
+            <div class="location-header">
+                <h2>Current Location: Gotlur</h2>
+            </div>
+
+            <div class="metrics-container">
+                <div class="metric-box">
+                    <h3>AQI</h3>
+                    <div class="metric-value">100</div>
+                </div>
+
+                <div class="metric-box">
+                    <h3>WQI</h3>
+                    <div class="metric-value">100</div>
+                </div>
+
+                <div class="metric-box">
+                    <h3>Sustainability Index</h3>
+                    <div class="metric-value">100</div>
+                </div>
+            </div>
+
+            <div class="recommendations-section">
+                <h3>Recommendations</h3>
+                <div class="recommendations-content">
+                    <!-- Content will be added dynamically -->
+                </div>
+            </div>
+        </section>
+
+        <!-- Data Visualization Section -->
+        <section class="visualization-section">
+            <div class="charts-container">
+                <div class="chart-wrapper">
+                    <h3>Air Quality Parameters</h3>
+                    <canvas id="aqiChart"></canvas>
+                </div>
+                <div class="chart-wrapper">
+                    <h3>Water Quality Parameters</h3>
+                    <canvas id="wqiChart"></canvas>
+                </div>
+            </div>
+            <div id="aqiMap" class="map-container"></div>
+        </section>
+
+        <!-- Historical Data Section -->
+        <section class="historical-data-section">
+            <div class="table-container">
+                <h3>Historical AQI Data</h3>
+                <div class="table-wrapper">
+                    <table id="aqiTable">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>PM2.5</th>
+                                <th>PM10</th>
+                                <th>O₃</th>
+                                <th>NO₂</th>
+                                <th>SO₂</th>
+                                <th>CO</th>
+                                <th>NH₃</th>
+                                <th>Pb</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="table-container">
+                <h3>Historical WQI Data</h3>
+                <div class="table-wrapper">
+                    <table id="wqiTable">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Temperature</th>
+                                <th>Turbidity</th>
+                                <th>pH</th>
+                                <th>TDS</th>
+                                <th>DO</th>
+                                <th>BOD</th>
+                                <th>Nutrients</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="config.js"></script>
+    <script src="js/main.js"></script>
+</body>
+</html> 

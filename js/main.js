@@ -1,8 +1,10 @@
 let currentLocation = 'Delhi';
 let carouselIndex = 0;
-const suggestions = document.getElementById('suggestions-list');
+const suggestions = document.getElementById('recommendationsList');
 
-const API_KEY = '0c286e13d68a43f9f57092b05b610fc6'; 
+// Use API key from global config
+const API_KEY = window.config ? window.config.OPENWEATHER_API_KEY : '0c286e13d68a43f9f57092b05b610fc6';
+const USER_SELECTION_API_KEY = 'edbfbbdfa90eddd01c5e44aeea05d664';
 const locationData = {
     Delhi: { AQI: 225, WQI: 45, aqiStatus: "Poor", wqiStatus: "Poor", pollutants: { pm2_5: 150, pm10: 200, o3: 120, no2: 80, so2: 60, co: 10, nh3: 40, Pb: 0.5 }, wqiData: { Temperature: 30, Turbidity: 5, pH: 6, TDS: 800, DO: 4, BOD: 10, Nutrients: 20 } },
     Chennai: { AQI: 67, WQI: 60, aqiStatus: "Moderate", wqiStatus: "Good", pollutants: { pm2_5: 40, pm10: 60, o3: 50, no2: 30, so2: 20, co: 5, nh3: 15, Pb: 0.2 }, wqiData: { Temperature: 28, Turbidity: 3, pH: 7, TDS: 500, DO: 6, BOD: 5, Nutrients: 10 } },
@@ -88,6 +90,267 @@ const districtAreas = {
 };
 const cache = {};
 
+let groundwaterData = [];
+
+// Load groundwater data when the page loads
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('Loading groundwater data...');
+    fetch('WQI-datasets/GroundWater2021.csv')
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            return response.text();
+        })
+        .then(data => {
+            Papa.parse(data, {
+                header: true,
+                complete: function(results) {
+                    groundwaterData = results.data
+                        .filter(row => row['Station Code'] && row['pH Min'] && row['Conductivity (µmhos/cm) Min'])
+                        .map(row => {
+                            // Try to get coordinates from the station name
+                            const stationName = row['Station Name'];
+                            const coords = coordMap[stationName] || null;
+                            
+                            return {
+                                stationCode: row['Station Code'],
+                                stationName: row['Station Name'],
+                                state: row['STATE'],
+                                lat: coords ? coords.lat : null,
+                                lon: coords ? coords.lon : null,
+                                pH: (parseFloat(row['pH Min']) + parseFloat(row['pH Max'])) / 2,
+                                conductivity: (parseFloat(row['Conductivity (µmhos/cm) Min']) + parseFloat(row['Conductivity (µmhos/cm) Max'])) / 2,
+                                temp: (parseFloat(row['Temperature Min']) + parseFloat(row['Temperature Max'])) / 2
+                            };
+                        })
+                        .filter(station => station.lat && station.lon); // Only keep stations with coordinates
+                    
+                    console.log('Groundwater data loaded successfully:', groundwaterData.length, 'stations');
+                },
+                error: function(error) {
+                    console.error('Error parsing CSV:', error);
+                }
+            });
+        })
+        .catch(error => {
+            console.error('Error loading groundwater data:', error);
+        });
+});
+
+function getWQIData(location) {
+    console.log('Getting WQI data for location:', location);
+    
+    // First try to get data from our location dataset
+    if (locationData[location]) {
+        console.log('Found location data in dataset');
+        return {
+            WQI: locationData[location].WQI,
+            wqiStatus: locationData[location].wqiStatus,
+            wqiData: locationData[location].wqiData
+        };
+    }
+
+    // If not in dataset, try to find nearest station from groundwater data
+    if (groundwaterData && groundwaterData.length > 0) {
+        // Get coordinates for the location
+        const coords = coordMap[location];
+        if (coords) {
+            const nearestStation = findNearestStation(coords);
+            if (nearestStation) {
+                const { WQI, status } = calculateWQI(
+                    nearestStation.pH,
+                    nearestStation.conductivity,
+                    nearestStation.temp
+                );
+                
+                return {
+                    WQI: WQI,
+                    wqiStatus: status,
+                    wqiData: {
+                        Temperature: nearestStation.temp,
+                        pH: nearestStation.pH,
+                        Conductivity: nearestStation.conductivity,
+                        Turbidity: 5,
+                        TDS: 500,
+                        DO: 6,
+                        BOD: 3,
+                        Nutrients: 5
+                    }
+                };
+            }
+        }
+    }
+
+    // If all else fails, return default data
+    console.log('Using default WQI data');
+    return getDefaultWQIData();
+}
+
+function getDefaultWQIData() {
+    return {
+        WQI: 50,
+        wqiStatus: 'Good',
+        wqiData: {
+            Temperature: 25,
+            pH: 7,
+            Conductivity: 500,
+            Turbidity: 5,
+            TDS: 500,
+            DO: 6,
+            BOD: 3,
+            Nutrients: 5
+        }
+    };
+}
+
+function findNearestStation(coords) {
+    if (!groundwaterData || groundwaterData.length === 0) {
+        console.warn('Groundwater data not loaded yet');
+        return null;
+    }
+
+    let nearestStation = null;
+    let minDistance = Infinity;
+
+    for (const station of groundwaterData) {
+        // Calculate distance using Haversine formula
+        const distance = calculateDistance(
+            coords.lat,
+            coords.lon,
+            station.lat || 0,
+            station.lon || 0
+        );
+
+        if (distance < minDistance) {
+            minDistance = distance;
+            nearestStation = station;
+        }
+    }
+
+    return nearestStation;
+}
+
+function calculateDistance(lat1, lon1, lat2, lon2) {
+    const R = 6371; // Earth's radius in km
+    const dLat = toRad(lat2 - lat1);
+    const dLon = toRad(lon2 - lon1);
+    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+              Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * 
+              Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c;
+}
+
+function toRad(degrees) {
+    return degrees * (Math.PI/180);
+}
+
+function calculateWQI(pH, conductivity, temp) {
+    console.log('Calculating WQI with parameters:', { pH, conductivity, temp });
+    
+    const pH_ideal = 7.0;
+    const pH_standard = 8.5;
+    const cond_ideal = 500;
+    const cond_standard = 1500;
+    const temp_ideal = 25;
+    const temp_standard = 30;
+
+    const qi_pH = (pH >= 6.5 && pH <= 8.5) ? 0 : 100 * Math.abs(pH - pH_ideal) / (pH_standard - pH_ideal);
+    const qi_cond = 100 * Math.abs(conductivity - cond_ideal) / (cond_standard - cond_ideal);
+    const qi_temp = 100 * Math.abs(temp - temp_ideal) / (temp_standard - temp_ideal);
+
+    const w_pH = 0.375;
+    const w_cond = 0.375;
+    const w_temp = 0.25;
+
+    const WQI = (qi_pH * w_pH) + (qi_cond * w_cond) + (qi_temp * w_temp);
+    let status = '';
+    if (WQI <= 25) status = 'Excellent';
+    else if (WQI <= 50) status = 'Good';
+    else if (WQI <= 75) status = 'Poor';
+    else if (WQI <= 100) status = 'Very Poor';
+    else status = 'Unsuitable';
+
+    console.log('WQI calculation result:', { WQI, status });
+    return { WQI: Number(WQI.toFixed(2)), status };
+}
+
+// Update the updateLocationDetails function to properly handle WQI data
+async function updateLocationDetails(location, lat, lon, date, time) {
+    console.log('[updateLocationDetails] Updating for:', location, lat, lon, date, time);
+    try {
+        // Get AQI data (pass location for fallback)
+        const aqiData = await getAQIData(lat, lon, location);
+        const status = aqiData.aqiStatus || getAQIStatus(aqiData.AQI);
+        
+        // Get WQI data
+        const wqiData = getWQIData(location);
+        console.log('WQI data:', wqiData);
+        
+        // Calculate Sustainability Index
+        const siData = calculateSustainabilityIndex(aqiData.AQI, wqiData.WQI);
+        
+        // Update individual status cards
+        const aqiValueElement = document.getElementById('aqiValue');
+        const aqiStatusElement = document.getElementById('aqiStatus');
+        const wqiValueElement = document.getElementById('wqiValue');
+        const wqiStatusElement = document.getElementById('wqiStatus');
+        const siValueElement = document.getElementById('siValue');
+        const siStatusElement = document.getElementById('siStatus');
+
+        if (aqiValueElement && aqiStatusElement) {
+            aqiValueElement.textContent = aqiData.AQI;
+            aqiValueElement.classList.remove('loading');
+            aqiStatusElement.textContent = status;
+            aqiStatusElement.classList.remove('loading');
+            aqiStatusElement.className = `status-label ${status.toLowerCase().replace(/\s+/g, '-')}`;
+            console.log('[updateLocationDetails] AQI updated:', aqiData.AQI, status);
+        } else {
+            console.warn('[updateLocationDetails] AQI DOM elements not found');
+        }
+
+        if (wqiValueElement && wqiStatusElement) {
+            wqiValueElement.textContent = wqiData.WQI;
+            wqiValueElement.classList.remove('loading');
+            wqiStatusElement.textContent = wqiData.wqiStatus;
+            wqiStatusElement.classList.remove('loading');
+            wqiStatusElement.className = `status-label ${wqiData.wqiStatus.toLowerCase().replace(/\s+/g, '-')}`;
+        }
+
+        if (siValueElement && siStatusElement) {
+            siValueElement.textContent = siData.SI;
+            siValueElement.classList.remove('loading');
+            siStatusElement.textContent = siData.siStatus;
+            siStatusElement.classList.remove('loading');
+            siStatusElement.className = `status-label ${siData.siStatus.toLowerCase().replace(/\s+/g, '-')}`;
+        }
+
+        // Update suggestions
+        updateSuggestions(aqiData.AQI, wqiData.WQI, siData.SI);
+
+        // Update charts
+        if (aqiData.pollutants) {
+            renderAQIChart(aqiData.pollutants);
+        }
+        if (wqiData.wqiData) {
+            renderWQIChart(wqiData.wqiData);
+        }
+    } catch (error) {
+        console.error('[updateLocationDetails] Error:', error);
+        // Always update DOM with fallback values
+        const aqiValueElement = document.getElementById('aqiValue');
+        const aqiStatusElement = document.getElementById('aqiStatus');
+        if (aqiValueElement && aqiStatusElement) {
+            aqiValueElement.textContent = '--';
+            aqiValueElement.classList.remove('loading');
+            aqiStatusElement.textContent = 'Unavailable';
+            aqiStatusElement.classList.remove('loading');
+            aqiStatusElement.className = 'status-label unavailable';
+        }
+    }
+}
+
 async function getCoordinates(location) {
     try {
         const response = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(location)},India&format=json&limit=1`, {
@@ -111,42 +374,157 @@ async function getCoordinates(location) {
     }
 }
 
-function initCarousel() {
+// City-specific API keys
+const cityAPIKeys = {
+    'Mumbai': 'mumbai_api_key_1',
+    'Delhi': 'delhi_api_key_2',
+    'Bangalore': 'bangalore_api_key_3',
+    'Hyderabad': 'hyderabad_api_key_4',
+    'Chennai': 'chennai_api_key_5',
+    'Kolkata': 'kolkata_api_key_6',
+    'Pune': 'pune_api_key_7',
+    'Ahmedabad': 'ahmedabad_api_key_8',
+    'Jaipur': 'jaipur_api_key_9',
+    'Lucknow': 'lucknow_api_key_10'
+};
+
+// Modified initCarousel function to include API calls
+async function initCarousel() {
     const carousel = document.getElementById('cityCarousel');
-    carousel.innerHTML = ''; // Clear existing cards
+    if (!carousel) {
+        console.error('Carousel element not found');
+        return;
+    }
 
-    // Get locations from locationData
-    const locations = Object.keys(locationData);
+    const carouselInner = document.createElement('div');
+    carouselInner.className = 'carousel-inner';
 
-    // Create cards for each location (duplicate for seamless looping)
-    const createCards = () => {
-        locations.forEach((location, index) => {
+    const popularCities = [
+        'Mumbai', 'Delhi', 'Bangalore', 'Hyderabad', 
+        'Chennai', 'Kolkata', 'Pune', 'Ahmedabad',
+        'Jaipur', 'Lucknow'
+    ];
+
+    // Create initial set of cards
+    popularCities.forEach(city => {
+        const card = createCityCard(city);
+        carouselInner.appendChild(card);
+    });
+
+    // Clone first 5 cards and append them at the end for seamless scrolling
+    for (let i = 0; i < 5; i++) {
+        const clone = createCityCard(popularCities[i]);
+        clone.setAttribute('aria-hidden', 'true'); // For accessibility
+        clone.setAttribute('data-clone', 'true'); // Mark as clone for identification
+        carouselInner.appendChild(clone);
+    }
+
+    carousel.innerHTML = ''; // Clear existing content
+    carousel.appendChild(carouselInner);
+
+    // Reset animation when it ends to create seamless loop
+    carouselInner.addEventListener('animationend', () => {
+        carouselInner.style.animation = 'none';
+        carouselInner.offsetHeight; // Trigger reflow
+        carouselInner.style.animation = null;
+    });
+
+    // Start updating AQI data for each city
+    updateCarouselData();
+}
+
+// Helper function to create a city card
+function createCityCard(city) {
             const card = document.createElement('div');
             card.className = 'city-card';
-            const aqi = locationData[location].AQI || 'N/A';
-            const wqi = locationData[location].WQI || 'N/A';
             card.innerHTML = `
-                <strong>${location}</strong><br>
-                AQI: ${aqi}<br>
-                WQI: ${wqi}
-            `;
+        <strong>${city}</strong>
+        <div class="aqi-indicator">
+            <span class="aqi-value loading">Loading...</span>
+            <span class="aqi-status"></span>
+        </div>
+    `;
+    
+    // Add click handler
             card.addEventListener('click', () => {
-                const today = new Date().toISOString().split('T')[0];
-                const time = new Date().toTimeString().split(' ')[0].slice(0, 5);
-                updateLocation(location, today, time);
-            });
-            carousel.appendChild(card);
-        });
-    };
+        const date = document.getElementById('dateInput').value;
+        const time = document.getElementById('timeInput').value;
+        updateLocation(city, date, time);
+    });
+    
+    return card;
+}
 
-    // Create two sets of cards for seamless looping
-    createCards();
-    createCards(); // Duplicate for continuous effect
+// Update carousel data with proper status display
+async function updateCarouselData() {
+    const cards = document.querySelectorAll('.city-card');
+    
+    for (const card of cards) {
+        // Skip cloned cards to avoid duplicate API calls
+        if (card.getAttribute('data-clone')) continue;
 
-    // Adjust animation duration based on number of cards
-    const totalCards = locations.length * 2;
-    const cardWidth = 160; // Width of each card (150px + 10px margin)
-    carousel.style.width = `${totalCards * cardWidth}px`;
+        const city = card.querySelector('strong').textContent;
+        const aqiValue = card.querySelector('.aqi-value');
+        const aqiStatus = card.querySelector('.aqi-status');
+        
+        try {
+            let coords = coordMap[city];
+            if (!coords) {
+                coords = await getCoordinates(city);
+                if (!coords) {
+                    coords = getEstimatedCoordinates(city);
+                }
+                coordMap[city] = coords;
+            }
+            
+            // Use city-specific API key
+            const apiKey = cityAPIKeys[city] || API_KEY;
+            const data = await getAQIData(coords.lat, coords.lon, city, apiKey);
+            
+            if (data && data.AQI) {
+                // Update original card
+                updateCardData(card, data);
+                
+                // Update cloned version of this card if it exists
+                const clonedCards = document.querySelectorAll(`[data-clone="true"] strong`);
+                clonedCards.forEach(clonedStrong => {
+                    if (clonedStrong.textContent === city) {
+                        updateCardData(clonedStrong.closest('.city-card'), data);
+                    }
+                });
+            } else {
+                setCardError(card, 'No data');
+            }
+        } catch (error) {
+            console.error(`Error updating data for ${city}:`, error);
+            setCardError(card, 'Error');
+        }
+    }
+    
+    // Update data every 5 minutes
+    setTimeout(updateCarouselData, 300000);
+}
+
+// Helper function to update card data
+function updateCardData(card, data) {
+    const aqiValue = card.querySelector('.aqi-value');
+    const aqiStatus = card.querySelector('.aqi-status');
+    
+    aqiValue.textContent = `AQI: ${data.AQI}`;
+    aqiValue.className = `aqi-value aqi-status-${data.aqiStatus.toLowerCase().replace(/\s+/g, '-')}`;
+    aqiStatus.textContent = data.aqiStatus;
+    aqiStatus.className = `aqi-status aqi-status-${data.aqiStatus.toLowerCase().replace(/\s+/g, '-')}`;
+}
+
+// Helper function to set card error state
+function setCardError(card, message) {
+    const aqiValue = card.querySelector('.aqi-value');
+    const aqiStatus = card.querySelector('.aqi-status');
+    
+    aqiValue.textContent = message;
+    aqiValue.className = 'aqi-value';
+    aqiStatus.textContent = '';
+    aqiStatus.className = 'aqi-status';
 }
 
 function getEstimatedCoordinates(location) {
@@ -177,299 +555,259 @@ function getEstimatedCoordinates(location) {
 }
 
 function calculateAQI(pollutants) {
-    // Convert co from µg/m³ to mg/m³ for EPA breakpoints
-    const coMgM3 = pollutants.co / 1000;
-
-    // Breakpoints for each pollutant (EPA standards, µg/m³ except co in mg/m³)
-    const breakpoints = {
-        pm2_5: [
-            { C_low: 0.0, C_high: 12.0, I_low: 0, I_high: 50 },
-            { C_low: 12.1, C_high: 35.4, I_low: 51, I_high: 100 },
-            { C_low: 35.5, C_high: 55.4, I_low: 101, I_high: 150 },
-            { C_low: 55.5, C_high: 150.4, I_low: 151, I_high: 200 },
-            { C_low: 150.5, C_high: 250.4, I_low: 201, I_high: 300 },
-            { C_low: 250.5, C_high: 350.4, I_low: 301, I_high: 400 },
-            { C_low: 350.5, C_high: 500.4, I_low: 401, I_high: 500 }
-        ],
-        pm10: [
-            { C_low: 0, C_high: 54, I_low: 0, I_high: 50 },
-            { C_low: 55, C_high: 154, I_low: 51, I_high: 100 },
-            { C_low: 155, C_high: 254, I_low: 101, I_high: 150 },
-            { C_low: 255, C_high: 354, I_low: 151, I_high: 200 },
-            { C_low: 355, C_high: 424, I_low: 201, I_high: 300 },
-            { C_low: 425, C_high: 504, I_low: 301, I_high: 400 },
-            { C_low: 505, C_high: 604, I_low: 401, I_high: 500 }
-        ],
-        o3: [
-            { C_low: 0, C_high: 54, I_low: 0, I_high: 50 }, // 8-hour avg
-            { C_low: 55, C_high: 70, I_low: 51, I_high: 100 },
-            { C_low: 71, C_high: 85, I_low: 101, I_high: 150 },
-            { C_low: 86, C_high: 105, I_low: 151, I_high: 200 },
-            { C_low: 106, C_high: 200, I_low: 201, I_high: 300 }
-        ],
-        co: [
-            { C_low: 0.0, C_high: 4.4, I_low: 0, I_high: 50 }, // mg/m³
-            { C_low: 4.5, C_high: 9.4, I_low: 51, I_high: 100 },
-            { C_low: 9.5, C_high: 12.4, I_low: 101, I_high: 150 },
-            { C_low: 12.5, C_high: 15.4, I_low: 151, I_high: 200 },
-            { C_low: 15.5, C_high: 30.4, I_low: 201, I_high: 300 },
-            { C_low: 30.5, C_high: 40.4, I_low: 301, I_high: 400 },
-            { C_low: 40.5, C_high: 50.4, I_low: 401, I_high: 500 }
-        ],
-        so2: [
-            { C_low: 0, C_high: 35, I_low: 0, I_high: 50 }, // 1-hour avg
-            { C_low: 36, C_high: 75, I_low: 51, I_high: 100 },
-            { C_low: 76, C_high: 185, I_low: 101, I_high: 150 },
-            { C_low: 186, C_high: 304, I_low: 151, I_high: 200 }
-        ],
-        no2: [
-            { C_low: 0, C_high: 53, I_low: 0, I_high: 50 }, // 1-hour avg
-            { C_low: 54, C_high: 100, I_low: 51, I_high: 100 },
-            { C_low: 101, C_high: 360, I_low: 101, I_high: 150 },
-            { C_low: 361, C_high: 649, I_low: 151, I_high: 200 },
-            { C_low: 650, C_high: 1249, I_low: 201, I_high: 300 },
-            { C_low: 1250, C_high: 1649, I_low: 301, I_high: 400 },
-            { C_low: 1650, C_high: 2049, I_low: 401, I_high: 500 }
-        ]
-    };
-
-    // Function to calculate sub-index for a pollutant
-    function getSubIndex(concentration, pollutant) {
-        const bp = breakpoints[pollutant];
-        for (let i = 0; i < bp.length; i++) {
-            if (concentration >= bp[i].C_low && concentration <= bp[i].C_high) {
-                const I = ((bp[i].I_high - bp[i].I_low) / (bp[i].C_high - bp[i].C_low)) * (concentration - bp[i].C_low) + bp[i].I_low;
-                return Math.round(I);
-            }
-        }
-        // If concentration exceeds highest breakpoint, use the highest AQI
-        return bp[bp.length - 1].I_high;
-    }
-
-    // Calculate sub-indices
     const subIndices = {
         pm2_5: getSubIndex(pollutants.pm2_5, 'pm2_5'),
         pm10: getSubIndex(pollutants.pm10, 'pm10'),
         o3: getSubIndex(pollutants.o3, 'o3'),
-        co: getSubIndex(coMgM3, 'co'),
+        no2: getSubIndex(pollutants.no2, 'no2'),
         so2: getSubIndex(pollutants.so2, 'so2'),
-        no2: getSubIndex(pollutants.no2, 'no2')
+        co: getSubIndex(pollutants.co, 'co'),
+        nh3: getSubIndex(pollutants.nh3, 'nh3')
     };
 
-    // AQI is the maximum sub-index
-    const aqi = Math.max(...Object.values(subIndices));
-    const dominantPollutant = Object.keys(subIndices).reduce((a, b) => subIndices[a] > subIndices[b] ? a : b);
-
-    // AQI categories
-    const aqiStatus = aqi <= 50 ? 'Good' :
-                     aqi <= 100 ? 'Moderate' :
-                     aqi <= 150 ? 'Unhealthy for Sensitive Groups' :
-                     aqi <= 200 ? 'Unhealthy' :
-                     aqi <= 300 ? 'Very Unhealthy' :
-                     aqi <= 400 ? 'Hazardous' :
-                     'Severe';
-
-    return {
-        AQI: aqi,
-        aqiStatus: aqiStatus,
-        subIndices: subIndices,
-        dominantPollutant: dominantPollutant
-    };
+    // Return the highest sub-index as the AQI
+    return Math.max(...Object.values(subIndices));
 }
 
-async function getAQIData(lat, lon) {
-    const cacheKey = `${lat}_${lon}_${Math.floor(Date.now() / (60 * 60 * 1000))}`;
-    if (cache[cacheKey]) return cache[cacheKey];
+function getSubIndex(concentration, pollutant) {
+    const breakpoints = {
+        pm2_5: [0, 12, 35.4, 55.4, 150.4, 250.4, 350.4, 500.4],
+        pm10: [0, 54, 154, 254, 354, 424, 504, 604],
+        o3: [0, 54, 70, 85, 105, 200, 400, 500],
+        no2: [0, 53, 100, 360, 649, 1249, 1649, 2049],
+        so2: [0, 35, 75, 185, 304, 604, 804, 1004],
+        co: [0, 4.4, 9.4, 12.4, 15.4, 30.4, 40.4, 50.4],
+        nh3: [0, 200, 400, 800, 1200, 1800, 2400, 3000]
+    };
 
-    try {
-        const response = await fetch(`http://api.openweathermap.org/data/2.5/air_pollution?lat=${lat}&lon=${lon}&appid=${API_KEY}`);
-        if (!response.ok) throw new Error(`AQI API error: ${response.statusText}`);
-        const data = await response.json();
-        console.log("lat", data);
-        const calculatedAQI = calculateAQI(data.list[0].components);
-        const aqiData = {
-            AQI:calculatedAQI.AQI , // Adjust based on API response
-            aqiStatus : calculateAQI.aqiStatus,
-            pollutants: data.list[0].components
-        };
-        cache[cacheKey] = aqiData;
-        return aqiData;
-    } catch (error) {
-        console.error(`AQI fetch error for lat=${lat}, lon=${lon}:`, error.message);
-        return { AQI: 50, aqiStatus: 'Good', pollutants: { pm2_5: 20, pm10: 30, o3: 20, no2: 15, so2: 10, co: 5, nh3: 10, Pb: 0 } };
+    const aqiValues = [0, 50, 100, 150, 200, 300, 400, 500];
+    const bp = breakpoints[pollutant];
+
+    for (let i = 0; i < bp.length - 1; i++) {
+        if (concentration >= bp[i] && concentration <= bp[i + 1]) {
+            return Math.round(
+                ((aqiValues[i + 1] - aqiValues[i]) / (bp[i + 1] - bp[i])) * 
+                (concentration - bp[i]) + aqiValues[i]
+            );
+        }
     }
+
+    return 500; // Return maximum AQI if concentration is above highest breakpoint
 }
 
 function getAQIStatus(aqi) {
     if (aqi <= 50) return 'Good';
     if (aqi <= 100) return 'Moderate';
-    if (aqi <= 200) return 'Poor';
-    if (aqi <= 300) return 'Very Poor';
-    return 'Severe';
+    if (aqi <= 150) return 'Unhealthy for Sensitive Groups';
+    if (aqi <= 200) return 'Unhealthy';
+    if (aqi <= 300) return 'Very Unhealthy';
+    return 'Hazardous';
 }
 
-function getWQIData(location) {
-    const data = locationData[location] || {
-        WQI: 50,
-        wqiStatus: 'Good',
-        wqiData: { Temperature: 25, Turbidity: 2, pH: 7, TDS: 300, DO: 6, BOD: 3, Nutrients: 5 }
-    };
-    console.log(`WQI for ${location}:`, data);
-    return data;
+// Modified getAQIData function to accept API key
+async function getAQIData(lat, lon, location = null, apiKey = null) {
+    try {
+        // Use provided API key or fall back to default
+        const key = apiKey || API_KEY;
+        
+        // Make API call with the specific key
+        const response = await fetch(`https://api.openweathermap.org/data/2.5/air_pollution?lat=${lat}&lon=${lon}&appid=${key}`);
+        
+        if (!response.ok) {
+            throw new Error(`API request failed with status ${response.status}`);
+        }
+
+        const data = await response.json();
+        
+        // Process the data and return AQI information
+        const pollutants = {
+            pm2_5: data.list[0].components.pm2_5,
+            pm10: data.list[0].components.pm10,
+            o3: data.list[0].components.o3,
+            no2: data.list[0].components.no2,
+            so2: data.list[0].components.so2,
+            co: data.list[0].components.co,
+            nh3: data.list[0].components.nh3
+        };
+
+        const aqi = calculateAQI(pollutants);
+        const aqiStatus = getAQIStatus(aqi);
+
+            return {
+            AQI: aqi,
+            aqiStatus: aqiStatus,
+            pollutants: pollutants
+            };
+    } catch (error) {
+        console.error('Error fetching AQI data:', error);
+        // Return fallback data if API call fails
+        return locationData[location] || {
+                AQI: 50,
+                aqiStatus: 'Moderate',
+                pollutants: {
+                pm2_5: 30,
+                pm10: 50,
+                    o3: 30,
+                    no2: 20,
+                so2: 10,
+                co: 0.8,
+                nh3: 20
+                }
+            };
+    }
+}
+
+// Helper function to find nearest city based on coordinates
+function findNearestCity(lat, lon) {
+    let nearestCity = 'Delhi';
+    let minDistance = Infinity;
+
+    for (const [city, coords] of Object.entries(coordMap)) {
+        const distance = Math.sqrt(
+            Math.pow(coords.lat - lat, 2) + 
+            Math.pow(coords.lon - lon, 2)
+        );
+        if (distance < minDistance) {
+            minDistance = distance;
+            nearestCity = city;
+        }
+    }
+    return nearestCity;
 }
 
 function calculateSustainabilityIndex(aqi, wqi) {
-    const normalizedAQI = Math.max(0, 100 - (aqi / 5));
-    const normalizedWQI = Math.max(0, 100 - wqi);
-    const si = 0.5 * normalizedAQI + 0.5 * normalizedWQI;
+    // Calculate SI based on AQI and WQI
+    const si = Math.round((aqi + wqi) / 2);
+    
     let siStatus;
     if (si >= 80) siStatus = 'Excellent';
     else if (si >= 60) siStatus = 'Good';
     else if (si >= 40) siStatus = 'Moderate';
-    else if (si >= 20) siStatus = 'Poor';
-    else siStatus = 'Critical';
-    const result = { SI: Math.round(si), siStatus };
-    console.log(`Sustainability Index:`, result);
-    return result;
-}
+    else siStatus = 'Poor';
 
-
-
-function updateLocationDetails(location, lat, lon, date, time) {
-    const info = `
-        <span>Place: ${location}</span> | 
-        <span>Latitude: ${lat.toFixed(4)}</span> | 
-        <span>Longitude: ${lon.toFixed(4)}</span> | 
-        <span>Date: ${date}</span> | 
-        <span>Time: ${time}</span>
-    `;
-    document.getElementById('locationInfo').innerHTML = info;
+    return {
+        SI: si,
+        siStatus: siStatus
+    };
 }
 
 async function updateLocation(location, date, time) {
-    console.log(`Updating: ${location}, ${date}, ${time}`);
-    showLoading(true);
+    if (!location) {
+        console.error('No location provided');
+        return;
+    }
+
     try {
-        currentLocation = location;
-        const coords = await getCoordinates(location) || getEstimatedCoordinates(location);
-        if (!coords.lat || !coords.lon) throw new Error(`Invalid coordinates for ${location}`);
+        // Show loading state
+        showLoading(true, 'Updating location data...');
+        
+        // Get coordinates
+        let coords = coordMap[location];
+        if (!coords) {
+            coords = await getCoordinates(location);
+            if (!coords) {
+                coords = getEstimatedCoordinates(location);
+            }
+            coordMap[location] = coords;
+        }
 
-        const aqiData = await getAQIData(coords.lat, coords.lon);
-        const wqiData =await getWQIData(location);
-        const siData =await calculateSustainabilityIndex(aqiData.AQI, wqiData.WQI);
+        // Get AQI data
+        const aqiData = await getAQIData(coords.lat, coords.lon, location);
+        const calculatedAQI = aqiData.AQI;
+        const aqiStatus = aqiData.aqiStatus || getAQIStatus(calculatedAQI);
 
-        document.getElementById('aqiValue').textContent = aqiData.AQI;
-        document.getElementById('aqiStatus').textContent = aqiData.aqiStatus;
-        document.getElementById('wqiValue').textContent = wqiData.WQI;
-        document.getElementById('wqiStatus').textContent = wqiData.wqiStatus;
-        document.getElementById('siValue').textContent = siData.SI;
-        document.getElementById('siStatus').textContent = siData.siStatus;
+        // Get WQI data
+        const wqiData = getWQIData(location);
 
-        renderAQIChart(aqiData.pollutants);
-        renderWQIChart(wqiData.wqiData);
-        updateAQITable(location, date);
-        updateWQITable(location, date);
-        updateSuggestions(aqiData.AQI, wqiData.WQI, siData.SI);
-        initMap(location, coords, aqiData.AQI);
-        updateLocationDetails(location, coords.lat, coords.lon, date, time); // New call
+        // Calculate sustainability index
+        const siData = calculateSustainabilityIndex(calculatedAQI, wqiData.WQI);
+
+        // Update map if it exists
+        if (window.map) {
+            window.map.setView([coords.lat, coords.lon], 10);
+            if (window.marker) {
+                window.map.removeLayer(window.marker);
+            }
+            window.marker = L.circleMarker([coords.lat, coords.lon], {
+                radius: 10,
+                color: getAQIColor(calculatedAQI),
+                fillColor: getAQIColor(calculatedAQI),
+                fillOpacity: 0.7
+            }).addTo(window.map).bindPopup(`<b>${location}</b><br>AQI: ${calculatedAQI} (${aqiStatus})`).openPopup();
+        }
+
+        // Update WQI status card
+        const wqiValueElement = document.getElementById('wqiValue');
+        const wqiStatusElement = document.getElementById('wqiStatus');
+        if (wqiValueElement && wqiStatusElement) {
+            wqiValueElement.textContent = wqiData.WQI;
+            wqiValueElement.classList.remove('loading');
+            wqiStatusElement.textContent = wqiData.wqiStatus;
+            wqiStatusElement.classList.remove('loading');
+            wqiStatusElement.className = `status-label ${wqiData.wqiStatus.toLowerCase().replace(/\s+/g, '-')}`;
+        }
+
+        // Update SI status card
+        const siValueElement = document.getElementById('siValue');
+        const siStatusElement = document.getElementById('siStatus');
+        if (siValueElement && siStatusElement) {
+            siValueElement.textContent = siData.SI;
+            siValueElement.classList.remove('loading');
+            siStatusElement.textContent = siData.siStatus;
+            siStatusElement.classList.remove('loading');
+            siStatusElement.className = `status-label ${siData.siStatus.toLowerCase().replace(/\s+/g, '-')}`;
+        }
+
+        // Update recommendations
+        updateSuggestions(calculatedAQI, wqiData.WQI, siData.SI);
+
+        // Show success notification
+        showNotification('Location updated successfully', 'success');
+
     } catch (error) {
-        console.error(`Update error for ${location}:`, error.message);
-        throw new Error(error.message);
+        console.error('Error updating location:', error);
+        showNotification('Failed to update location. Please try again.', 'error');
+        
+        // Use default values for the location
+        const defaultData = locationData[location] || locationData['Puttaparthi'];
+        
+        // Update status cards with default values
+        updateStatusCards(defaultData);
     } finally {
         showLoading(false);
     }
 }
 
-// Enhanced WQI Calculation (using dataset parameters)
-function calculateWQI(location) {
-    const data = locationData[location] || {
-        wqiData: { Temperature: 25, Turbidity: 2, pH: 7, TDS: 300, DO: 6, BOD: 3, Nutrients: 5 }
-    };
-    const { Temperature, Turbidity, pH, TDS, DO, BOD, Nutrients } = data.wqiData;
+// Initialize map with proper AQI display
+function initMap(location, coords, aqi) {
+    if (window.map) window.map.remove();
+    
+    window.map = L.map('aqiMap').setView([coords.lat, coords.lon], 10);
 
-    // Weighted WQI formula based on typical water quality criteria
-    const weights = { Temperature: 0.15, Turbidity: 0.15, pH: 0.20, TDS: 0.15, DO: 0.15, BOD: 0.10, Nutrients: 0.10 };
-    const qi = {
-        Temperature: (Temperature > 30 ? 100 - (Temperature - 30) * 5 : 100) * weights.Temperature,
-        Turbidity: (Turbidity > 5 ? 100 - (Turbidity - 5) * 20 : 100) * weights.Turbidity,
-        pH: (Math.abs(7 - pH) > 1 ? 100 - (Math.abs(7 - pH) * 50) : 100) * weights.pH,
-        TDS: (TDS > 500 ? 100 - (TDS - 500) / 5 : 100) * weights.TDS,
-        DO: (DO < 5 ? DO * 20 : 100) * weights.DO,
-        BOD: (BOD > 5 ? 100 - BOD * 20 : 100) * weights.BOD,
-        Nutrients: (Nutrients > 10 ? 100 - Nutrients * 10 : 100) * weights.Nutrients
-    };
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+    }).addTo(window.map);
 
-    const wqi = Object.values(qi).reduce((sum, value) => sum + value, 0);
-    const wqiStatus = wqi >= 80 ? 'Excellent' : wqi >= 60 ? 'Good' : wqi >= 40 ? 'Moderate' : wqi >= 20 ? 'Poor' : 'Critical';
-    return { WQI: Math.round(wqi), wqiStatus, wqiData: data.wqiData };
-}
+    // Add a marker for the initial location with AQI value
+    const aqiStatus = getAQIStatus(aqi);
+    window.marker = L.circleMarker([coords.lat, coords.lon], {
+        radius: 10,
+        color: getAQIColor(aqi),
+        fillColor: getAQIColor(aqi),
+        fillOpacity: 0.7
+    }).addTo(window.map).bindPopup(`<b>${location}</b><br>AQI: ${aqi} (${aqiStatus})`).openPopup();
 
-// Update getWQIData to use calculated WQI
-function getWQIData(location) {
-    const calculatedWQI = calculateWQI(location);
-    console.log(`Calculated WQI for ${location}:`, calculatedWQI);
-    return calculatedWQI;
-}
-
-// Enhanced Sustainability Index with dataset alignment
-function calculateSustainabilityIndex(aqi, wqi) {
-    const normalizedAQI = Math.max(0, 100 - (aqi / 5));
-    const normalizedWQI = Math.max(0, wqi); // Using calculated WQI directly
-    const si = 0.5 * normalizedAQI + 0.5 * normalizedWQI;
-    let siStatus;
-    if (si >= 80) siStatus = 'Excellent';
-    else if (si >= 60) siStatus = 'Good';
-    else if (si >= 40) siStatus = 'Moderate';
-    else if (si >= 20) siStatus = 'Poor';
-    else siStatus = 'Critical';
-    return { SI: Math.round(si), siStatus };
-}
-
-async function updateLocation(location, date, time) {
-    console.log(`Updating: ${location}, ${date}, ${time}`);
-    showLoading(true);
-    try {
-        currentLocation = location || 'Unknown'; 
-        let coords;
-
-        if (typeof location === 'string' && coordMap[location]) {
-            coords = coordMap[location];
-        }
-        else if (typeof location === 'string' && location.includes('Lat:') && location.includes('Lon:')) {
-            const latPart = location.split(',')[0].split(':')[1].trim();
-            const lonPart = location.split(',')[1].split(':')[1].trim();
-            coords = { lat: parseFloat(latPart), lon: parseFloat(lonPart) };
-        }
-        else {
-            coords = await getCoordinates(location) || getEstimatedCoordinates(location);
-        }
-
-        if (!coords.lat || !coords.lon) throw new Error(`Invalid coordinates for ${currentLocation}`);
-
-        const aqiData = await getAQIData(coords.lat, coords.lon);
-        const wqiData = getWQIData(currentLocation); 
-        const siData = calculateSustainabilityIndex(aqiData.AQI, wqiData.WQI);
-
-        document.getElementById('aqiValue').textContent = aqiData.AQI;
-        document.getElementById('aqiStatus').textContent = aqiData.aqiStatus;
-        document.getElementById('wqiValue').textContent = wqiData.WQI;
-        document.getElementById('wqiStatus').textContent = wqiData.wqiStatus;
-        document.getElementById('siValue').textContent = siData.SI;
-        document.getElementById('siStatus').textContent = siData.siStatus;
-
-        renderAQIChart(aqiData.pollutants);
-        renderWQIChart(wqiData.wqiData);
-        updateAQITable(currentLocation, date);
-        updateWQITable(currentLocation, date);
-        updateSuggestions(aqiData.AQI, wqiData.WQI, siData.SI);
-        initMap(currentLocation, coords, aqiData.AQI); 
-        updateLocationDetails(currentLocation, coords.lat, coords.lon, date, time);
-    } catch (error) {
-        console.error(`Update error for ${currentLocation}:`, error.message);
-        throw new Error(error.message);
-    } finally {
-        showLoading(false);
-    }
+    // // Update AQI status card
+    // const aqiValueElement = document.getElementById('aqiValue');
+    // const aqiStatusElement = document.getElementById('aqiStatus');
+    // if (aqiValueElement && aqiStatusElement) {
+    //     aqiValueElement.textContent = aqi;
+    //     aqiValueElement.classList.remove('loading');
+    //     aqiStatusElement.textContent = aqiStatus;
+    //     aqiStatusElement.classList.remove('loading');
+    //     aqiStatusElement.className = `status-label ${aqiStatus.toLowerCase().replace(/\s+/g, '-')}`;
+    // }
 }
 
 async function startAPIServer() {
@@ -484,225 +822,656 @@ async function startAPIServer() {
     console.log('API server mock started. Access via getLocationData(location).');
 }
 
-window.onload = async () => {
-    await startAPIServer();
+// Simple location detection function
+function getUserLocation() {
+    console.log('Starting location detection...');
+    
+    // Show loading state
+    document.getElementById('currentLocationName').textContent = 'Getting your location...';
+    document.getElementById('currentLocationCoords').textContent = 'Please wait...';
+    document.getElementById('currentLocationWQI').textContent = '--';
+    document.getElementById('currentLocationWQIStatus').textContent = 'Loading...';
+    document.getElementById('currentLocationSI').textContent = '--';
+    document.getElementById('currentLocationSIStatus').textContent = 'Loading...';
+
+    // Check if geolocation is supported
+    if (!navigator.geolocation) {
+        console.error('Geolocation is not supported');
+        document.getElementById('currentLocationName').textContent = 'Geolocation not supported';
+        document.getElementById('currentLocationCoords').textContent = 'Your browser does not support location detection';
+        return;
+    }
+
+    // Simple geolocation request
+    navigator.geolocation.getCurrentPosition(
+        // Success callback
+        function(position) {
+            console.log('Location obtained:', position);
+            const lat = position.coords.latitude;
+            const lon = position.coords.longitude;
+            
+            // Update coordinates display immediately
+            document.getElementById('currentLocationCoords').textContent = 
+                `${lat.toFixed(4)}°N, ${lon.toFixed(4)}°E`;
+            
+            // Try to get location name from reverse geocoding first
+            reverseGeocode(lat, lon).then(locationName => {
+                if (locationName) {
+                    document.getElementById('currentLocationName').textContent = locationName;
+                    // Store the location name for later use
+                    currentLocation = locationName;
+                    
+                    // Get WQI data for the location
+                    const wqiData = getWQIData(locationName);
+                    console.log('WQI data for current location:', wqiData);
+                    
+                    // Update WQI display
+                    const wqiValue = document.getElementById('currentLocationWQI');
+                    const wqiStatus = document.getElementById('currentLocationWQIStatus');
+                    if (wqiValue && wqiStatus) {
+                        wqiValue.textContent = `WQI: ${wqiData.WQI}`;
+                        wqiStatus.textContent = wqiData.wqiStatus;
+                        wqiStatus.className = `current-location-status ${wqiData.wqiStatus.toLowerCase().replace(/\s+/g, '-')}`;
+                    }
+                }
+            });
+
+            // Get AQI data directly from OpenWeather API
+            fetch(`https://api.openweathermap.org/data/2.5/air_pollution?lat=${lat}&lon=${lon}&appid=${API_KEY}`)
+                .then(response => {
+                    if (!response.ok) throw new Error('Failed to fetch AQI data');
+                    return response.json();
+                })
+                .then(data => {
+                    if (data && data.list && data.list[0] && data.list[0].components) {
+                        const components = data.list[0].components;
+                        const calculatedAQI = calculateAQI({
+                            pm2_5: components.pm2_5,
+                            pm10: components.pm10,
+                            o3: components.o3,
+                            no2: components.no2,
+                            so2: components.so2,
+                            co: components.co,
+                            nh3: components.nh3
+                        });
+                        
+                        // Update AQI display
+                        const aqiValue = document.getElementById('currentLocationAQI');
+                        const aqiStatus = document.getElementById('currentLocationAQIStatus');
+                        if (aqiValue && aqiStatus) {
+                            aqiValue.textContent = `AQI: ${calculatedAQI}`;
+                            const status = getAQIStatus(calculatedAQI);
+                            aqiStatus.textContent = status;
+                            aqiStatus.className = `current-location-status ${status.toLowerCase().replace(/\s+/g, '-')}`;
+                        }
+
+                        // Calculate and update SI
+                        const wqiData = getWQIData(currentLocation);
+                        const siData = calculateSustainabilityIndex(calculatedAQI, wqiData.WQI);
+                        const siValue = document.getElementById('currentLocationSI');
+                        const siStatus = document.getElementById('currentLocationSIStatus');
+                        if (siValue && siStatus) {
+                            siValue.textContent = `SI: ${siData.SI}`;
+                            siStatus.textContent = siData.siStatus;
+                            siStatus.className = `current-location-status ${siData.siStatus.toLowerCase().replace(/\s+/g, '-')}`;
+                        }
+
+                        // Update recommendations
+                        updateSuggestions(calculatedAQI, wqiData.WQI, siData.SI);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching AQI data:', error);
+                    // Fallback to local data
+                    const nearestCity = findNearestCity(lat, lon);
+                    const localData = locationData[nearestCity] || locationData['Delhi'];
+                    
+                    // Update AQI display with local data
+                    const aqiValue = document.getElementById('currentLocationAQI');
+                    const aqiStatus = document.getElementById('currentLocationAQIStatus');
+                    if (aqiValue && aqiStatus) {
+                        aqiValue.textContent = `AQI: ${localData.AQI}`;
+                        aqiStatus.textContent = localData.aqiStatus;
+                        aqiStatus.className = `current-location-status ${localData.aqiStatus.toLowerCase().replace(/\s+/g, '-')}`;
+                    }
+
+                    // Update WQI display with local data
+                    const wqiValue = document.getElementById('currentLocationWQI');
+                    const wqiStatus = document.getElementById('currentLocationWQIStatus');
+                    if (wqiValue && wqiStatus) {
+                        wqiValue.textContent = `WQI: ${localData.WQI}`;
+                        wqiStatus.textContent = localData.wqiStatus;
+                        wqiStatus.className = `current-location-status ${localData.wqiStatus.toLowerCase().replace(/\s+/g, '-')}`;
+                    }
+
+                    // Update SI display
+                    const siData = calculateSustainabilityIndex(localData.AQI, localData.WQI);
+                    const siValue = document.getElementById('currentLocationSI');
+                    const siStatus = document.getElementById('currentLocationSIStatus');
+                    if (siValue && siStatus) {
+                        siValue.textContent = `SI: ${siData.SI}`;
+                        siStatus.textContent = siData.siStatus;
+                        siStatus.className = `current-location-status ${siData.siStatus.toLowerCase().replace(/\s+/g, '-')}`;
+                    }
+
+                    // Update recommendations with local data
+                    updateSuggestions(localData.AQI, localData.WQI, siData.SI);
+                });
+        },
+        // Error callback
+        function(error) {
+            console.error('Geolocation error:', error);
+            let message = 'Location detection failed';
+            let details = 'Please check your location permissions';
+            
+            switch(error.code) {
+                case error.PERMISSION_DENIED:
+                    message = 'Location access denied';
+                    details = 'Please allow location access in your browser settings';
+                    break;
+                case error.POSITION_UNAVAILABLE:
+                    message = 'Location unavailable';
+                    details = 'Unable to determine your location';
+                    break;
+                case error.TIMEOUT:
+                    message = 'Location request timed out';
+                    details = 'Please try again';
+                    break;
+            }
+            
+            document.getElementById('currentLocationName').textContent = message;
+            document.getElementById('currentLocationCoords').textContent = details;
+            document.getElementById('currentLocationWQI').textContent = '--';
+            document.getElementById('currentLocationWQIStatus').textContent = 'Unavailable';
+            document.getElementById('currentLocationSI').textContent = '--';
+            document.getElementById('currentLocationSIStatus').textContent = 'Unavailable';
+        },
+        // Options
+        {
+            enableHighAccuracy: true,
+            timeout: 10000,
+            maximumAge: 0
+        }
+    );
+}
+
+// Update window.onload to be simpler
+window.onload = function() {
+    console.log('Page loaded, initializing...');
+    
+    // Initialize UI components
+    startAPIServer();
+    initCarousel();
+    
+    // Set current date and time
     const today = new Date().toISOString().split('T')[0];
     const time = new Date().toTimeString().split(' ')[0].slice(0, 5);
     document.getElementById('dateInput').value = today;
     document.getElementById('timeInput').value = time;
-
-    const userLoc = await getUserLocation();
-    const initialLocation = userLoc?.location || 'Delhi';
-    if (userLoc) {
-        coordMap[initialLocation] = { lat: userLoc.lat, lon: userLoc.lon };
-    }
-    updateLocation(initialLocation, today, time);
-
-    const state = Object.keys(stateDistricts).find(s => stateDistricts[s].some(d => districtAreas[d]?.includes(initialLocation) || d === initialLocation));
-    if (state) {
-        document.getElementById('stateSelect').value = state;
-        document.getElementById('stateSelect').dispatchEvent(new Event('change'));
-        const district = Object.keys(districtAreas).find(d => districtAreas[d].includes(initialLocation) || d === initialLocation);
-        if (district) {
-            document.getElementById('districtSelect').value = district;
-            document.getElementById('districtSelect').dispatchEvent(new Event('change'));
-            if (districtAreas[district]?.includes(initialLocation)) {
-                document.getElementById('mandalSelect').value = initialLocation;
-            }
-        }
-    }
+    
+    // Add a button to manually trigger location detection
+    const locationButton = document.createElement('button');
+    locationButton.textContent = 'Get My Location';
+    locationButton.className = 'location-button';
+    locationButton.onclick = getUserLocation;
+    
+    const locationContainer = document.getElementById('currentLocationName').parentElement;
+    locationContainer.appendChild(locationButton);
+    
+    // Try to get location automatically
+    getUserLocation().catch(console.error);
 };
 
+function updateCurrentLocationUI(locationData, aqiData) {
+    // Update location name
+    const locationNameElement = document.getElementById('currentLocationName');
+    if (locationNameElement) {
+        locationNameElement.textContent = locationData.display_name || 'Current Location';
+        locationNameElement.className = 'current-location-value';
+    }
+
+    // Update AQI value and status if available
+    if (aqiData && aqiData.aqi_data) {
+        const aqiValueElement = document.getElementById('currentLocationAQI');
+        const aqiStatusElement = document.getElementById('currentLocationAQIStatus');
+        
+        if (aqiValueElement && aqiStatusElement) {
+            aqiValueElement.textContent = aqiData.aqi_data.aqi || 'N/A';
+            aqiValueElement.className = 'current-location-value';
+            
+            const status = aqiData.aqi_data.status || 'Unknown';
+            aqiStatusElement.textContent = status;
+            aqiStatusElement.className = 'current-location-status ' + status.toLowerCase();
+        }
+    }
+}
+
+function showCurrentLocationLoading() {
+    const elements = [
+        'currentLocationName',
+        'currentLocationCoords',
+        'currentLocationAQI',
+        'currentLocationAQIStatus'
+    ];
+
+    elements.forEach(id => {
+        const element = document.getElementById(id);
+        if (element) {
+            element.textContent = 'Loading...';
+            element.className = element.className.replace('error', '') + ' loading';
+        }
+    });
+}
+
+async function reverseGeocode(lat, lon) {
+    try {
+        const response = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`, {
+            headers: {
+                'User-Agent': 'AWQI-Environmental-Monitoring/1.0'
+            }
+        });
+        
+        if (!response.ok) return null;
+        
+        const data = await response.json();
+        return data.address.city || 
+               data.address.town || 
+               data.address.village || 
+               data.address.suburb || 
+               data.address.county || 
+               data.address.state || 
+               null;
+    } catch (error) {
+        console.warn('Reverse geocoding error:', error);
+        return null;
+    }
+}
+
+// Helper function to update location selectors
+function updateLocationSelectors(location) {
+    setTimeout(() => {
+        const state = Object.keys(stateDistricts).find(s => 
+            stateDistricts[s].some(d => 
+                districtAreas[d]?.includes(location) || d === location
+            )
+        );
+
+    if (state) {
+            const stateSelect = document.getElementById('stateSelect');
+            if (stateSelect) {
+                stateSelect.value = state;
+                stateSelect.dispatchEvent(new Event('change'));
+
+                const district = Object.keys(districtAreas).find(d => 
+                    districtAreas[d].includes(location) || d === location
+                );
+
+        if (district) {
+                    const districtSelect = document.getElementById('districtSelect');
+                    if (districtSelect) {
+                        districtSelect.value = district;
+                        districtSelect.dispatchEvent(new Event('change'));
+
+                        if (districtAreas[district]?.includes(location)) {
+                            const mandalSelect = document.getElementById('mandalSelect');
+                            if (mandalSelect) {
+                                mandalSelect.value = location;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }, 0);
+}
+
+// Update showLoading function to be more informative
+function showLoading(show, message = 'Loading...') {
+    const elements = [
+        'locationInfo',
+        'aqiValue',
+        'wqiValue',
+        'siValue',
+        'aqiStatus',
+        'wqiStatus',
+        'siStatus',
+        'suggestions-list'
+    ];
+
+    elements.forEach(id => {
+        const element = document.getElementById(id);
+        if (element) {
+            if (show) {
+                element.classList.add('loading');
+                element.textContent = message;
+            } else {
+                element.classList.remove('loading');
+            }
+        }
+    });
+
+    // Disable form elements during loading
+    const formElements = [
+        'stateSelect',
+        'districtSelect',
+        'mandalSelect',
+        'dateInput',
+        'timeInput',
+        'searchBtn'
+    ];
+
+    formElements.forEach(id => {
+        const element = document.getElementById(id);
+        if (element) {
+            element.disabled = show;
+        }
+    });
+}
 
 function renderAQIChart(pollutants) {
-    const ctx = document.getElementById('aqiChart').getContext('2d');
-    if (window.aqiChart && typeof window.aqiChart.destroy === 'function') {
-        window.aqiChart.destroy();
-    }
-    window.aqiChart = new Chart(ctx, {
-        type: 'pie',
+    const ctx = document.getElementById('aqiChart');
+    if (!ctx) return;
+
+    const labels = Object.keys(pollutants);
+    const values = Object.values(pollutants);
+    const colors = values.map(value => getAQIColor(value));
+
+    new Chart(ctx, {
+        type: 'bar',
         data: {
-            labels: ['PM2.5', 'pm10', 'o3', 'no2', 'so2', 'co', 'nh3'],
+            labels: labels,
             datasets: [{
-                data: [pollutants.pm2_5, pollutants.pm10, pollutants.o3, pollutants.no2, pollutants.so2, pollutants.co, pollutants.nh3],
-                backgroundColor: ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40', '#C9CBCF']
+                label: 'Pollutant Levels',
+                data: values,
+                backgroundColor: colors,
+                borderColor: colors,
+                borderWidth: 1
             }]
         },
-        options: { responsive: true, maintainAspectRatio: false }
+        options: {
+            responsive: true,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    title: {
+                        display: true,
+                        text: 'Concentration (μg/m³)'
+                    }
+                }
+            }
+        }
     });
 }
 
 function renderWQIChart(wqiData) {
-    const ctx = document.getElementById('wqiChart').getContext('2d');
-    if (window.wqiChart && typeof window.wqiChart.destroy === 'function') {
-        window.wqiChart.destroy();
-    }
-    window.wqiChart = new Chart(ctx, {
-        type: 'pie',
+    const ctx = document.getElementById('wqiChart');
+    if (!ctx) return;
+
+    const labels = Object.keys(wqiData);
+    const values = Object.values(wqiData);
+    const colors = values.map(value => getWQIColor(value));
+
+    new Chart(ctx, {
+        type: 'bar',
         data: {
-            labels: ['Temperature', 'Turbidity', 'pH', 'TDS', 'DO', 'BOD', 'Nutrients'],
+            labels: labels,
             datasets: [{
-                data: [wqiData.Temperature, wqiData.Turbidity, wqiData.pH, wqiData.TDS, wqiData.DO, wqiData.BOD, wqiData.Nutrients],
-                backgroundColor: ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40', '#C9CBCF']
+                label: 'Water Quality Parameters',
+                data: values,
+                backgroundColor: colors,
+                borderColor: colors,
+                borderWidth: 1
             }]
         },
-        options: { responsive: true, maintainAspectRatio: false }
-    });
-}
-
-function updateSuggestions(aqi, wqi, si) {
-    let messages = [];
-
-    // AQI Suggestions
-    if (aqi <= 50) {
-        messages.push('Air Quality: Good - Enjoy outdoor activities safely!');
-    } else if (aqi <= 100) {
-        messages.push('Air Quality: Satisfactory - Minor discomfort possible for sensitive groups.');
-    } else if (aqi <= 200) {
-        messages.push('Air Quality: Moderate - Wear a mask if sensitive to pollution.');
-        messages.push('Limit prolonged outdoor exertion.');
-    } else if (aqi <= 300) {
-        messages.push('Air Quality: Poor - Avoid outdoor activities.');
-        messages.push('Use air purifiers indoors.');
-    } else if (aqi <= 400) {
-        messages.push('Air Quality: Very Poor - Stay indoors, seal windows.');
-        messages.push('Seek medical advice if breathing issues arise.');
-    } else {
-        messages.push('Air Quality: Severe - Critical health risk! Avoid exposure.');
-    }
-
-    // WQI Suggestions
-    if (wqi <= 25) {
-        messages.push('Water Quality: Excellent - Safe for all uses.');
-    } else if (wqi <= 50) {
-        messages.push('Water Quality: Good - Suitable for drinking and use.');
-    } else if (wqi <= 75) {
-        messages.push('Water Quality: Poor - Boil or filter water before drinking.');
-        messages.push('Check TDS levels regularly.');
-    } else if (wqi <= 100) {
-        messages.push('Water Quality: Very Poor - Use bottled water if possible.');
-        messages.push('Avoid using for cooking without treatment.');
-    } else {
-        messages.push('Water Quality: Unsuitable - Unsafe for any use.');
-    }
-
-    // SI Suggestions
-    if (si >= 80) {
-        messages.push('Sustainability: Excellent - Keep up eco-friendly practices!');
-    } else if (si >= 60) {
-        messages.push('Sustainability: Good - Maintain current efforts.');
-        messages.push('Consider reducing pollution sources.');
-    } else if (si >= 40) {
-        messages.push('Sustainability: Moderate - Adopt greener habits.');
-        messages.push('Monitor air and water quality closely.');
-    } else if (si >= 20) {
-        messages.push('Sustainability: Poor - Take action to improve environment.');
-        messages.push('Reduce waste and emissions.');
-    } else {
-        messages.push('Sustainability: Critical - Urgent action needed!');
-    }
-    console.log(messages.join('\n'))
-
-    suggestions.innerText = messages.join('\n');
-}
-
-function updateAQITable(location, date) {
-    const table = document.getElementById('aqiTable').getElementsByTagName('tbody')[0];
-    table.innerHTML = '';
-    const baseDate = new Date(date);
-    for (let i = 0; i < 10; i++) {
-        const pastDate = new Date(baseDate.getTime() - i * 86400000);
-        const dateStr = pastDate.toLocaleDateString();
-        const row = table.insertRow();
-        row.innerHTML = `<td>${dateStr}</td><td>${Math.floor(Math.random() * 100)}</td><td>${Math.floor(Math.random() * 150)}</td><td>${Math.floor(Math.random() * 80)}</td><td>${Math.floor(Math.random() * 50)}</td><td>${Math.floor(Math.random() * 30)}</td><td>${Math.floor(Math.random() * 20)}</td><td>${Math.floor(Math.random() * 40)}</td><td>${(Math.random() * 0.5).toFixed(2)}</td>`;
-    }
-}
-
-function updateWQITable(location, date) {
-    const table = document.getElementById('wqiTable').getElementsByTagName('tbody')[0];
-    table.innerHTML = '';
-    const baseDate = new Date(date);
-    for (let i = 0; i < 10; i++) {
-        const pastDate = new Date(baseDate.getTime() - i * 86400000);
-        const dateStr = pastDate.toLocaleDateString();
-        const row = table.insertRow();
-        row.innerHTML = `<td>${dateStr}</td><td>${(Math.random() * 10 + 20).toFixed(1)}</td><td>${(Math.random() * 5).toFixed(1)}</td><td>${(Math.random() * 2 + 6).toFixed(1)}</td><td>${(Math.random() * 500 + 200).toFixed(0)}</td><td>${(Math.random() * 4 + 4).toFixed(1)}</td><td>${(Math.random() * 10).toFixed(1)}</td><td>${(Math.random() * 20).toFixed(1)}</td>`;
-    }
-}
-
-function initMap(location, coords, aqi) {
-    if (window.map) window.map.remove(); 
-    window.map = L.map('aqiMap').setView([coords.lat, coords.lon], 10);
-
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 19,
-        attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-    }).addTo(window.map);
-
-    // Add a marker for the initial location
-    L.circleMarker([coords.lat, coords.lon], {
-        radius: 10,
-        color: getAQIColor(aqi),
-        fillColor: getAQIColor(aqi),
-        fillOpacity: 0.7
-    }).addTo(window.map).bindPopup(`<b>${location}</b><br>AQI: ${aqi}`).openPopup();
-
-    window.map.on('click', async function(e) {
-        const { lat, lng } = e.latlng;
-        
-        showLoading(true);
-    
-        try {
-            const clickedLocation = await reverseGeocode(lat, lng);
-            currentLocation = clickedLocation || `Lat: ${lat.toFixed(4)}, Lon: ${lng.toFixed(4)}`; 
-    
-            if (window.marker) window.map.removeLayer(window.marker);
-            window.marker = L.circleMarker([lat, lng], {
-                radius: 10,
-                color: 'blue',
-                fillColor: 'blue',
-                fillOpacity: 0.7
-            }).addTo(window.map).bindPopup(`<b>${currentLocation}</b>`).openPopup();
-    
-            const today = new Date().toISOString().split('T')[0];
-            const time = new Date().toTimeString().split(' ')[0].slice(0, 5);
-            await updateLocation(currentLocation, today, time);
-    
-            const state = Object.keys(stateDistricts).find(s => stateDistricts[s].some(d => districtAreas[d]?.includes(currentLocation) || d === currentLocation));
-            if (state) {
-                document.getElementById('stateSelect').value = state;
-                document.getElementById('stateSelect').dispatchEvent(new Event('change'));
-                const district = Object.keys(districtAreas).find(d => districtAreas[d].includes(currentLocation) || d === currentLocation);
-                if (district) {
-                    document.getElementById('districtSelect').value = district;
-                    document.getElementById('districtSelect').dispatchEvent(new Event('change'));
-                    if (districtAreas[district]?.includes(currentLocation)) {
-                        document.getElementById('mandalSelect').value = currentLocation;
+        options: {
+            responsive: true,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    title: {
+                        display: true,
+                        text: 'Value'
                     }
                 }
             }
-        } catch (error) {
-            console.error('Map click error:', error.message);
-            alert(`Failed to process clicked location: ${error.message}`);
-        } finally {
-            showLoading(false);
         }
     });
 }
 
-function getAQIColor(aqi) {
-    if (aqi <= 50) return 'green';
-    if (aqi <= 100) return 'yellow';
-    if (aqi <= 200) return 'orange';
-    if (aqi <= 300) return 'red';
-    if (aqi <= 400) return 'purple';
-    return 'maroon';
+function getAQISuggestions(aqi) {
+    const suggestions = [];
+    
+    if (aqi <= 50) {
+        suggestions.push({
+            text: 'Air quality is good. Enjoy outdoor activities.',
+            priority: 'low',
+            icon: 'smile'
+        });
+    } else if (aqi <= 100) {
+        suggestions.push({
+            text: 'Air quality is moderate. Sensitive groups should limit outdoor activities.',
+            priority: 'medium',
+            icon: 'exclamation-triangle'
+        });
+    } else if (aqi <= 150) {
+        suggestions.push({
+            text: 'Air quality is unhealthy for sensitive groups. Limit outdoor activities.',
+            priority: 'high',
+            icon: 'exclamation-circle'
+        });
+    } else {
+        suggestions.push({
+            text: 'Air quality is unhealthy. Avoid outdoor activities.',
+            priority: 'critical',
+            icon: 'times-circle'
+        });
+    }
+    
+    return suggestions;
 }
 
-function showLoading(show) {
-    const suggestions = document.getElementsByClassName('suggestions')[0];
-    suggestions.classList.toggle('loading', show);
-    suggestions.textContent = show ? 'Loading data...' : '';
+function getWQISuggestions(wqi) {
+    const suggestions = [];
+    
+    if (wqi >= 80) {
+        suggestions.push({
+            text: 'Water quality is excellent. Safe for all uses.',
+            priority: 'low',
+            icon: 'smile'
+        });
+    } else if (wqi >= 60) {
+        suggestions.push({
+            text: 'Water quality is good. Safe for most uses.',
+            priority: 'medium',
+            icon: 'exclamation-triangle'
+        });
+    } else if (wqi >= 40) {
+        suggestions.push({
+            text: 'Water quality is fair. Some treatment may be needed.',
+            priority: 'high',
+            icon: 'exclamation-circle'
+        });
+    } else {
+        suggestions.push({
+            text: 'Water quality is poor. Treatment required before use.',
+            priority: 'critical',
+            icon: 'times-circle'
+        });
+    }
+    
+    return suggestions;
+}
+
+function getSISuggestions(si) {
+    const suggestions = [];
+    
+    if (si >= 80) {
+        suggestions.push({
+            text: 'Excellent sustainability. Continue current practices.',
+            priority: 'low',
+            icon: 'smile'
+        });
+    } else if (si >= 60) {
+        suggestions.push({
+            text: 'Good sustainability. Minor improvements possible.',
+            priority: 'medium',
+            icon: 'exclamation-triangle'
+        });
+    } else if (si >= 40) {
+        suggestions.push({
+            text: 'Fair sustainability. Significant improvements needed.',
+            priority: 'high',
+            icon: 'exclamation-circle'
+        });
+    } else {
+        suggestions.push({
+            text: 'Poor sustainability. Major changes required.',
+            priority: 'critical',
+            icon: 'times-circle'
+        });
+    }
+    
+    return suggestions;
+}
+
+function updateSuggestions(aqi, wqi, si) {
+    const suggestionsList = document.getElementById('currentLocationSuggestions');
+    if (!suggestionsList) {
+        console.error('Suggestions container not found');
+        return;
+    }
+
+    const aqiSuggestions = getAQISuggestions(aqi);
+    const wqiSuggestions = getWQISuggestions(wqi);
+    const siSuggestions = getSISuggestions(si);
+
+    let html = '';
+    
+    // AQI Recommendations
+    html += `
+        <div class="suggestion-card">
+            <h4><i class="fas fa-wind"></i> Air Quality Recommendations</h4>
+            <div class="suggestions-list">
+                ${aqiSuggestions.map(s => `
+                    <div class="suggestion-item ${s.priority}">
+                        <i class="fas fa-${s.icon}"></i>
+                        <span>${s.text}</span>
+                    </div>
+                `).join('')}
+            </div>
+        </div>
+    `;
+
+    // WQI Recommendations
+    html += `
+        <div class="suggestion-card">
+            <h4><i class="fas fa-tint"></i> Water Quality Recommendations</h4>
+            <div class="suggestions-list">
+                ${wqiSuggestions.map(s => `
+                    <div class="suggestion-item ${s.priority}">
+                        <i class="fas fa-${s.icon}"></i>
+                        <span>${s.text}</span>
+                    </div>
+                `).join('')}
+            </div>
+        </div>
+    `;
+
+    // Sustainability Recommendations
+    html += `
+        <div class="suggestion-card">
+            <h4><i class="fas fa-leaf"></i> Sustainability Recommendations</h4>
+            <div class="suggestions-list">
+                ${siSuggestions.map(s => `
+                    <div class="suggestion-item ${s.priority}">
+                        <i class="fas fa-${s.icon}"></i>
+                        <span>${s.text}</span>
+                    </div>
+                `).join('')}
+            </div>
+        </div>
+    `;
+
+    // Add debug logging
+    console.log('Updating suggestions with:', { aqi, wqi, si });
+    
+    // Update the suggestions container
+    suggestionsList.innerHTML = html;
+
+    // Add CSS styles dynamically if they don't exist
+    if (!document.getElementById('suggestions-styles')) {
+        const style = document.createElement('style');
+        style.id = 'suggestions-styles';
+        style.textContent = `
+            .suggestion-card {
+                background: white;
+                border-radius: 8px;
+                padding: 15px;
+                margin-bottom: 15px;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            }
+            .suggestion-card h4 {
+                color: #333;
+                margin-bottom: 10px;
+                font-size: 1.1em;
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            }
+            .suggestions-list {
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
+            }
+            .suggestion-item {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                padding: 8px;
+                border-radius: 4px;
+                font-size: 0.9em;
+            }
+            .suggestion-item i {
+                width: 20px;
+                text-align: center;
+            }
+            .suggestion-item.low {
+                background: #e6f4ea;
+                color: #1e4620;
+            }
+            .suggestion-item.medium {
+                background: #fff3e0;
+                color: #e65100;
+            }
+            .suggestion-item.high {
+                background: #fce4ec;
+                color: #880e4f;
+            }
+            .suggestion-item.critical {
+                background: #ffebee;
+                color: #b71c1c;
+            }
+        `;
+        document.head.appendChild(style);
+    }
+}
+
+function getAQIColor(aqi) {
+    if (aqi <= 50) return '#4ade80'; // Bright green
+    if (aqi <= 100) return '#fbbf24'; // Bright amber/yellow
+    if (aqi <= 200) return '#f97316'; // Bright orange
+    if (aqi <= 300) return '#ef4444'; // Bright red
+    if (aqi <= 400) return '#9333ea'; // Bright purple
+    return '#991b1b'; // Dark red for severe
+}
+
+function getWQIColor(wqi) {
+    if (wqi >= 80) return '#4ade80'; // Bright green
+    if (wqi >= 60) return '#fbbf24'; // Bright amber/yellow
+    if (wqi >= 40) return '#f97316'; // Bright orange
+    if (wqi >= 20) return '#ef4444'; // Bright red
+    if (wqi >= 10) return '#9333ea'; // Bright purple
+    return '#991b1b'; // Dark red for severe
 }
 
 document.getElementById('stateSelect').addEventListener('change', function() {
@@ -752,81 +1521,923 @@ document.getElementById('searchBtn').addEventListener('click', async () => {
     const location = mandal || district || state;
     console.log(`Searching for: ${location}, Date: ${date}, Time: ${time}`);
 
+    // Show loading state
+    const aqiValueElement = document.getElementById('aqiValue');
+    const aqiStatusElement = document.getElementById('aqiStatus');
+    const wqiValueElement = document.getElementById('wqiValue');
+    const wqiStatusElement = document.getElementById('wqiStatus');
+    const siValueElement = document.getElementById('siValue');
+    const siStatusElement = document.getElementById('siStatus');
+
+    if (aqiValueElement && aqiStatusElement) {
+        aqiValueElement.textContent = 'Loading...';
+        aqiValueElement.classList.add('loading');
+        aqiStatusElement.textContent = 'Loading...';
+        aqiStatusElement.classList.add('loading');
+    }
+
     document.getElementById('searchBtn').disabled = true;
     try {
+        // Get coordinates for the location
+        let coords = coordMap[location];
+        if (!coords) {
+            coords = await getCoordinates(location);
+            if (!coords) {
+                coords = getEstimatedCoordinates(location);
+            }
+        }
+
+        let calculatedAQI;
+        let aqiStatus;
+
+        try {
+            // Try to fetch AQI data from API
+            const aqiResponse = await fetch(`https://api.openweathermap.org/data/2.5/air_pollution?lat=${coords.lat}&lon=${coords.lon}&appid=${API_KEY}`);
+            if (!aqiResponse.ok) throw new Error('Failed to fetch AQI data');
+            const aqiData = await aqiResponse.json();
+            
+            // Calculate AQI from components
+            const components = aqiData.list[0].components;
+            calculatedAQI = calculateAQI({
+                pm2_5: components.pm2_5,
+                pm10: components.pm10,
+                o3: components.o3,
+                no2: components.no2,
+                so2: components.so2,
+                co: components.co,
+                nh3: components.nh3
+            });
+        } catch (apiError) {
+            console.warn('API fetch failed, using local data:', apiError);
+            // Fallback to local data
+            const nearestCity = findNearestCity(coords.lat, coords.lon);
+            const localData = locationData[nearestCity] || locationData['Delhi'];
+            calculatedAQI = localData.AQI;
+        }
+
+        // Get AQI status
+        aqiStatus = getAQIStatus(calculatedAQI);
+
+        // Get WQI data
+        const wqiData = getWQIData(location);
+        
+        // Calculate SI
+        const siData = calculateSustainabilityIndex(calculatedAQI, wqiData.WQI);
+
+        // // Update all status cards
+        // if (aqiValueElement && aqiStatusElement) {
+        //     aqiValueElement.textContent = `AQI: ${calculatedAQI}`;
+        //     aqiValueElement.classList.remove('loading');
+        //     aqiStatusElement.textContent = aqiStatus;
+        //     aqiStatusElement.classList.remove('loading');
+        //     aqiStatusElement.className = `status-label ${aqiStatus.toLowerCase().replace(/\s+/g, '-')}`;
+        // }
+
+        if (wqiValueElement && wqiStatusElement) {
+            wqiValueElement.textContent = `WQI: ${wqiData.WQI}`;
+            wqiValueElement.classList.remove('loading');
+            wqiStatusElement.textContent = wqiData.wqiStatus;
+            wqiStatusElement.classList.remove('loading');
+            wqiStatusElement.className = `status-label ${wqiData.wqiStatus.toLowerCase().replace(/\s+/g, '-')}`;
+        }
+
+        if (siValueElement && siStatusElement) {
+            siValueElement.textContent = `SI: ${siData.SI}`;
+            siValueElement.classList.remove('loading');
+            siStatusElement.textContent = siData.siStatus;
+            siStatusElement.classList.remove('loading');
+            siStatusElement.className = `status-label ${siData.siStatus.toLowerCase().replace(/\s+/g, '-')}`;
+        }
+
+        // Update map if it exists
+        if (window.map) {
+            window.map.setView([coords.lat, coords.lon], 10);
+            if (window.marker) {
+                window.map.removeLayer(window.marker);
+            }
+            window.marker = L.circleMarker([coords.lat, coords.lon], {
+                radius: 10,
+                color: getAQIColor(calculatedAQI),
+                fillColor: getAQIColor(calculatedAQI),
+                fillOpacity: 0.7
+            }).addTo(window.map).bindPopup(`<b>${location}</b><br>AQI: ${calculatedAQI}`).openPopup();
+        }
+
+        // Update other location details
         await updateLocation(location, date, time);
+        
+        // Update recommendations
+        updateSuggestions(calculatedAQI, wqiData.WQI, siData.SI);
+        
+        // Show success notification
+        showNotification('Location updated successfully', 'success');
     } catch (error) {
-        alert(`Failed to load data for ${location}: ${error.message}`);
         console.error('Search error:', error);
+        showNotification(`Unable to load data for ${location}. Using default values.`, 'error');
+        
+        // Use default values for Sri Sathya Sai
+        const defaultData = locationData['Puttaparthi'];
+        
+        // Update all status cards with default values
+        updateStatusCards({
+            AQI: defaultData.AQI,
+            WQI: defaultData.WQI,
+            aqiStatus: defaultData.aqiStatus,
+            wqiStatus: defaultData.wqiStatus
+        });
+
+        // Calculate and update SI
+        const siData = calculateSustainabilityIndex(defaultData.AQI, defaultData.WQI);
+        if (siValueElement && siStatusElement) {
+            siValueElement.textContent = siData.SI;
+            siValueElement.classList.remove('loading');
+            siStatusElement.textContent = siData.status;
+            siStatusElement.classList.remove('loading');
+            siStatusElement.className = `status-label ${siData.status.toLowerCase().replace(/\s+/g, '-')}`;
+        }
     } finally {
         document.getElementById('searchBtn').disabled = false;
     }
 });
 
-async function getUserLocation() {
-    return new Promise((resolve, reject) => {
-        if (navigator.geolocation) {
-            navigator.geolocation.getCurrentPosition(
-                async (position) => {
-                    const { latitude, longitude } = position.coords;
-                    console.log(`User location: lat=${latitude}, lon=${longitude}`);
-                    const location = await reverseGeocode(latitude, longitude);
-                    resolve({ lat: latitude, lon: longitude, location });
-                },
-                (error) => {
-                    console.error('Geolocation error:', error.message);
-                    resolve(null);  
-                }
-            );
+// Form validation
+function validateForm() {
+    const state = document.getElementById('stateSelect').value;
+    const district = document.getElementById('districtSelect').value;
+    const mandal = document.getElementById('mandalSelect').value;
+    const date = document.getElementById('dateInput').value;
+    const time = document.getElementById('timeInput').value;
+
+    let isValid = true;
+    const errors = {
+        state: '',
+        district: '',
+        date: '',
+        time: ''
+    };
+
+    // Clear previous errors
+    clearErrors();
+
+    // State validation
+    if (!state) {
+        errors.state = 'Please select a state';
+        isValid = false;
+        showError('stateSelect', errors.state);
+    }
+
+    // District validation
+    if (!district) {
+        errors.district = 'Please select a district';
+        isValid = false;
+        showError('districtSelect', errors.district);
+    }
+
+    // Date validation
+    if (!date) {
+        errors.date = 'Please select a date';
+        isValid = false;
+        showError('dateInput', errors.date);
         } else {
-            console.warn('Geolocation not supported');
-            resolve(null);
+        const selectedDate = new Date(date);
+        const today = new Date();
+        if (selectedDate > today) {
+            errors.date = 'Date cannot be in the future';
+            isValid = false;
+            showError('dateInput', errors.date);
+        }
+    }
+
+    // Time validation
+    if (!time) {
+        errors.time = 'Please select a time';
+        isValid = false;
+        showError('timeInput', errors.time);
+    }
+
+    return isValid;
+}
+
+function showError(elementId, message) {
+    const element = document.getElementById(elementId);
+    const errorElement = document.getElementById(`${elementId}Error`);
+    element.classList.add('error');
+    if (errorElement) {
+        errorElement.textContent = message;
+    }
+}
+
+function clearErrors() {
+    const elements = ['stateSelect', 'districtSelect', 'mandalSelect', 'dateInput', 'timeInput'];
+    elements.forEach(id => {
+        const element = document.getElementById(id);
+        const errorElement = document.getElementById(`${id}Error`);
+        if (element) {
+            element.classList.remove('error');
+        }
+        if (errorElement) {
+            errorElement.textContent = '';
         }
     });
 }
 
-async function reverseGeocode(lat, lon) {
+// Enhanced UI feedback
+function showNotification(message, type = 'info') {
+    Swal.fire({
+        title: type.charAt(0).toUpperCase() + type.slice(1),
+        text: message,
+        icon: type,
+        toast: true,
+        position: 'top-end',
+        showConfirmButton: false,
+        timer: 3000,
+        timerProgressBar: true
+    });
+}
+
+// Enhanced location update
+async function updateLocation(location, date, time) {
+    if (!validateForm()) {
+        return;
+    }
+
+    showLoading(true);
+    
     try {
-        const response = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`, {
-            headers: { 'User-Agent': 'AWQI-Environmental-Monitoring/1.0' }
-        });
-        if (!response.ok) throw new Error(`Reverse geocoding failed: ${response.statusText}`);
-        const data = await response.json();
-        const location = data.address.city || data.address.town || data.address.village || data.address.county || 'Unknown';
-        console.log(`Reverse geocoded to: ${location} at lat=${lat}, lon=${lon}`);
-        return location;
+        let coords = coordMap[location];
+        if (!coords) {
+            coords = await getCoordinates(location);
+            if (!coords) {
+                coords = getEstimatedCoordinates(location);
+            }
+            coordMap[location] = coords;
+        }
+
+        await updateLocationDetails(location, coords.lat, coords.lon, date, time);
+        showNotification('Location updated successfully', 'success');
     } catch (error) {
-        console.error('Reverse geocoding error:', error.message);
-        return null;  
+        console.error('Error updating location:', error);
+        showNotification('Failed to update location. Please try again.', 'error');
+    } finally {
+        showLoading(false);
     }
 }
 
-window.onload = async () => {
-    await startAPIServer();
-    initCarousel(); 
-    const today = new Date().toISOString().split('T')[0];
-    const time = new Date().toTimeString().split(' ')[0].slice(0, 5);
-    document.getElementById('dateInput').value = today;
-    document.getElementById('timeInput').value = time;
+// Enhanced loading state
+function showLoading(show) {
+    const elements = [
+        'locationInfo',
+        'aqiValue',
+        'wqiValue',
+        'siValue',
+        'aqiStatus',
+        'wqiStatus',
+        'siStatus',
+        'suggestions-list'
+    ];
 
-    const userLoc = await getUserLocation();
-    const initialLocation = userLoc?.location || 'Delhi';
-    if (userLoc) {
-        coordMap[initialLocation] = { lat: userLoc.lat, lon: userLoc.lon };
-    }
-    updateLocation(initialLocation, today, time);
-
-    const state = Object.keys(stateDistricts).find(s => stateDistricts[s].some(d => districtAreas[d]?.includes(initialLocation) || d === initialLocation));
-    if (state) {
-        document.getElementById('stateSelect').value = state;
-        document.getElementById('stateSelect').dispatchEvent(new Event('change'));
-        const district = Object.keys(districtAreas).find(d => districtAreas[d].includes(initialLocation) || d === initialLocation);
-        if (district) {
-            document.getElementById('districtSelect').value = district;
-            document.getElementById('districtSelect').dispatchEvent(new Event('change'));
-            if (districtAreas[district]?.includes(initialLocation)) {
-                document.getElementById('mandalSelect').value = initialLocation;
+    elements.forEach(id => {
+        const element = document.getElementById(id);
+        if (element) {
+            if (show) {
+                element.classList.add('loading');
+                element.textContent = 'Loading...';
+            } else {
+                element.classList.remove('loading');
             }
         }
+    });
+
+    // Disable form elements during loading
+    const formElements = [
+        'stateSelect',
+        'districtSelect',
+        'mandalSelect',
+        'dateInput',
+        'timeInput',
+        'searchBtn'
+    ];
+
+    formElements.forEach(id => {
+        const element = document.getElementById(id);
+        if (element) {
+            element.disabled = show;
+        }
+    });
+}
+
+// Enhanced chart rendering
+function renderAQIChart(pollutants) {
+    const ctx = document.getElementById('aqiChart');
+    if (!ctx) return;
+
+    const labels = Object.keys(pollutants);
+    const values = Object.values(pollutants);
+    const colors = values.map(value => getAQIColor(value));
+
+    new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Pollutant Levels',
+                data: values,
+                backgroundColor: colors,
+                borderColor: colors,
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    title: {
+                        display: true,
+                        text: 'Concentration (μg/m³)'
+                    }
+                }
+            }
+        }
+    });
+}
+
+// Enhanced WQI chart rendering
+function renderWQIChart(wqiData) {
+    const ctx = document.getElementById('wqiChart');
+    if (!ctx) return;
+
+    const labels = Object.keys(wqiData);
+    const values = Object.values(wqiData);
+    const colors = values.map(value => getWQIColor(value));
+
+    new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Water Quality Parameters',
+                data: values,
+                backgroundColor: colors,
+                borderColor: colors,
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    title: {
+                        display: true,
+                        text: 'Value'
+                    }
+                }
+            }
+        }
+    });
+}
+
+function getWQIUnit(parameter) {
+    const units = {
+        'Temperature': '°C',
+        'Turbidity': 'NTU',
+        'pH': '',
+        'TDS': 'mg/L',
+        'DO': 'mg/L',
+        'BOD': 'mg/L',
+        'Nutrients': 'mg/L'
+    };
+    return units[parameter] || '';
+}
+
+// Event Listeners
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialize the map
+    const defaultLocation = 'Delhi';
+    const defaultCoords = coordMap[defaultLocation];
+    initMap(defaultLocation, defaultCoords, locationData[defaultLocation].AQI);
+
+    // Initialize the carousel
+    initCarousel();
+
+    // State change handler
+    document.getElementById('stateSelect').addEventListener('change', function(e) {
+        const state = e.target.value;
+        const districtSelect = document.getElementById('districtSelect');
+        const mandalSelect = document.getElementById('mandalSelect');
+
+        // Clear and disable mandal select
+        mandalSelect.innerHTML = '<option value="">Select Mandal</option>';
+        mandalSelect.disabled = true;
+
+        if (state) {
+            // Update districts
+            districtSelect.innerHTML = '<option value="">Select District</option>';
+            stateDistricts[state].forEach(district => {
+                const option = document.createElement('option');
+                option.value = district;
+                option.textContent = district;
+                districtSelect.appendChild(option);
+            });
+            districtSelect.disabled = false;
+        } else {
+            districtSelect.innerHTML = '<option value="">Select District</option>';
+            districtSelect.disabled = true;
+        }
+
+        clearErrors();
+    });
+
+    // District change handler
+    document.getElementById('districtSelect').addEventListener('change', function(e) {
+        const district = e.target.value;
+        const mandalSelect = document.getElementById('mandalSelect');
+
+        if (district && districtAreas[district]) {
+            // Update mandals
+            mandalSelect.innerHTML = '<option value="">Select Mandal</option>';
+            districtAreas[district].forEach(mandal => {
+                const option = document.createElement('option');
+                option.value = mandal;
+                option.textContent = mandal;
+                mandalSelect.appendChild(option);
+            });
+            mandalSelect.disabled = false;
+        } else {
+            mandalSelect.innerHTML = '<option value="">Select Mandal</option>';
+            mandalSelect.disabled = true;
+        }
+
+        clearErrors();
+    });
+
+    // Search button handler
+    document.getElementById('searchBtn').addEventListener('click', async function() {
+        const state = document.getElementById('stateSelect').value;
+        const district = document.getElementById('districtSelect').value;
+        const mandal = document.getElementById('mandalSelect').value;
+        const date = document.getElementById('dateInput').value;
+        const time = document.getElementById('timeInput').value;
+
+        if (!date || !time) {
+            alert('Please select both date and time.');
+            return;
+        }
+
+        if (!state) {
+            alert('Please select a state.');
+            return;
+        }
+
+            const location = mandal || district || state;
+        console.log(`Searching for: ${location}, Date: ${date}, Time: ${time}`);
+
+        // Show loading state
+        const aqiValueElement = document.getElementById('aqiValue');
+        const aqiStatusElement = document.getElementById('aqiStatus');
+        const wqiValueElement = document.getElementById('wqiValue');
+        const wqiStatusElement = document.getElementById('wqiStatus');
+        const siValueElement = document.getElementById('siValue');
+        const siStatusElement = document.getElementById('siStatus');
+
+        if (aqiValueElement && aqiStatusElement) {
+            aqiValueElement.textContent = 'Loading...';
+            aqiValueElement.classList.add('loading');
+            aqiStatusElement.textContent = 'Loading...';
+            aqiStatusElement.classList.add('loading');
+        }
+
+        document.getElementById('searchBtn').disabled = true;
+
+        try {
+            // Get coordinates
+            let coords = coordMap[location];
+            if (!coords) {
+                coords = await getCoordinates(location);
+                if (!coords) {
+                    coords = getEstimatedCoordinates(location);
+                }
+            }
+
+            // Get AQI data
+            const aqiData = await getAQIData(coords.lat, coords.lon, location);
+            const calculatedAQI = aqiData.AQI;
+            const aqiStatus = aqiData.aqiStatus || getAQIStatus(calculatedAQI);
+
+            // Get WQI data
+            const wqiData = getWQIData(location);
+
+            // Calculate sustainability index
+            const siData = calculateSustainabilityIndex(calculatedAQI, wqiData.WQI);
+
+            // Update all status cards
+            if (aqiValueElement && aqiStatusElement) {
+                aqiValueElement.textContent = calculatedAQI;
+                aqiValueElement.classList.remove('loading');
+                aqiStatusElement.textContent = aqiStatus;
+                aqiStatusElement.classList.remove('loading');
+                aqiStatusElement.className = `status-label ${aqiStatus.toLowerCase().replace(/\s+/g, '-')}`;
+            }
+
+            if (wqiValueElement && wqiStatusElement) {
+                wqiValueElement.textContent = wqiData.WQI;
+                wqiValueElement.classList.remove('loading');
+                wqiStatusElement.textContent = wqiData.wqiStatus;
+                wqiStatusElement.classList.remove('loading');
+                wqiStatusElement.className = `status-label ${wqiData.wqiStatus.toLowerCase().replace(/\s+/g, '-')}`;
+            }
+
+            if (siValueElement && siStatusElement) {
+                siValueElement.textContent = siData.SI;
+                siValueElement.classList.remove('loading');
+                siStatusElement.textContent = siData.siStatus;
+                siStatusElement.classList.remove('loading');
+                siStatusElement.className = `status-label ${siData.siStatus.toLowerCase().replace(/\s+/g, '-')}`;
+            }
+
+            // Update map if it exists
+            if (window.map) {
+                window.map.setView([coords.lat, coords.lon], 10);
+                if (window.marker) {
+                    window.map.removeLayer(window.marker);
+                }
+                window.marker = L.circleMarker([coords.lat, coords.lon], {
+                    radius: 10,
+                    color: getAQIColor(calculatedAQI),
+                    fillColor: getAQIColor(calculatedAQI),
+                    fillOpacity: 0.7
+                }).addTo(window.map).bindPopup(`<b>${location}</b><br>AQI: ${calculatedAQI}`).openPopup();
+            }
+
+            // Update recommendations
+            updateSuggestions(calculatedAQI, wqiData.WQI, siData.SI);
+            
+            // Show success notification
+            showNotification('Location updated successfully', 'success');
+        } catch (error) {
+            console.error('Search error:', error);
+            showNotification(`Unable to load data for ${location}. Using default values.`, 'error');
+            
+            // Use default values for Sri Sathya Sai
+            const defaultData = locationData['Puttaparthi'];
+            
+            // Update all status cards with default values
+            updateStatusCards({
+                AQI: defaultData.AQI,
+                WQI: defaultData.WQI,
+                aqiStatus: defaultData.aqiStatus,
+                wqiStatus: defaultData.wqiStatus
+            });
+
+            // Calculate and update SI
+            const siData = calculateSustainabilityIndex(defaultData.AQI, defaultData.WQI);
+            if (siValueElement && siStatusElement) {
+                siValueElement.textContent = siData.SI;
+                siValueElement.classList.remove('loading');
+                siStatusElement.textContent = siData.status;
+                siStatusElement.classList.remove('loading');
+                siStatusElement.className = `status-label ${siData.status.toLowerCase().replace(/\s+/g, '-')}`;
+            }
+        } finally {
+            document.getElementById('searchBtn').disabled = false;
+        }
+    });
+
+    // Set default date and time
+    const now = new Date();
+    document.getElementById('dateInput').value = now.toISOString().split('T')[0];
+    document.getElementById('timeInput').value = now.toTimeString().split(' ')[0].slice(0, 5);
+
+    // Try to get user's location
+    getUserLocation().catch(console.error);
+});
+
+// Function to get historical AQI data with realistic trends
+async function getHistoricalAQIData(location, days = 10) {
+    const historicalData = [];
+    const today = new Date();
+    
+    try {
+        // Get current AQI data
+        const coords = coordMap[location] || await getCoordinates(location);
+        if (!coords) {
+            throw new Error('Could not get coordinates for location');
+        }
+        
+        const currentData = await getAQIData(coords.lat, coords.lon, location);
+        const baseAQI = currentData.AQI;
+        const basePollutants = currentData.pollutants;
+        
+        // Generate historical data with realistic variations
+        for (let i = 0; i < days; i++) {
+            const date = new Date(today);
+            date.setDate(date.getDate() - i);
+            const dateStr = date.toISOString().split('T')[0];
+            
+            // Calculate variation factor (more variation for older dates)
+            const variationFactor = 1 + (Math.random() * 0.4 - 0.2) * (1 + i * 0.1);
+            
+            // Generate historical pollutants with realistic variations
+            const historicalPollutants = {};
+            Object.entries(basePollutants).forEach(([key, value]) => {
+                // Add some randomness but keep it within realistic bounds
+                const variation = 1 + (Math.random() * 0.3 - 0.15) * variationFactor;
+                historicalPollutants[key] = Math.max(0, value * variation);
+            });
+            
+            // Calculate historical AQI
+            const historicalAQI = calculateAQI(historicalPollutants);
+            
+            historicalData.push({
+                date: dateStr,
+                aqi: Math.round(historicalAQI),
+                pollutants: historicalPollutants
+            });
+        }
+        
+        // Sort data by date (newest first)
+        historicalData.sort((a, b) => new Date(b.date) - new Date(a.date));
+        
+    } catch (error) {
+        console.error('Error generating historical AQI data:', error);
+        // Fallback to local data with variations
+        const fallbackData = locationData[location] || locationData['Puttaparthi'];
+        
+        for (let i = 0; i < days; i++) {
+            const date = new Date(today);
+            date.setDate(date.getDate() - i);
+            const dateStr = date.toISOString().split('T')[0];
+            
+            // Generate variations for fallback data
+            const variationFactor = 1 + (Math.random() * 0.4 - 0.2) * (1 + i * 0.1);
+            const historicalPollutants = {};
+            
+            Object.entries(fallbackData.pollutants).forEach(([key, value]) => {
+                const variation = 1 + (Math.random() * 0.3 - 0.15) * variationFactor;
+                historicalPollutants[key] = Math.max(0, value * variation);
+            });
+            
+            const historicalAQI = calculateAQI(historicalPollutants);
+            
+            historicalData.push({
+                date: dateStr,
+                aqi: Math.round(historicalAQI),
+                pollutants: historicalPollutants
+            });
+        }
+        
+        // Sort data by date (newest first)
+        historicalData.sort((a, b) => new Date(b.date) - new Date(a.date));
     }
-};
+    
+    return historicalData;
+}
+
+// Function to render AQI trends chart
+function renderAQITrendsChart(historicalData) {
+    const ctx = document.getElementById('aqiTrendsChart');
+    if (!ctx) return;
+
+    // Prepare data for the chart
+    const dates = historicalData.map(data => data.date);
+    const aqiValues = historicalData.map(data => data.aqi);
+    
+    // Create gradient for the line
+    const gradient = ctx.getContext('2d').createLinearGradient(0, 0, 0, 400);
+    gradient.addColorStop(0, 'rgba(75, 192, 192, 0.2)');
+    gradient.addColorStop(1, 'rgba(75, 192, 192, 0)');
+
+    new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: dates,
+            datasets: [{
+                label: 'AQI Trend',
+                data: aqiValues,
+                borderColor: 'rgb(75, 192, 192)',
+                backgroundColor: gradient,
+                tension: 0.4,
+                fill: true
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                title: {
+                    display: true,
+                    text: 'AQI Trend (Last 10 Days)'
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return `AQI: ${context.raw}`;
+                        }
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: false,
+                    title: {
+                        display: true,
+                        text: 'AQI Value'
+                    }
+                },
+                x: {
+                    title: {
+                        display: true,
+                        text: 'Date'
+                    }
+                }
+            }
+        }
+    });
+}
+
+// Function to get historical WQI data
+async function getHistoricalWQIData(location, days = 10) {
+    const historicalData = [];
+    const today = new Date();
+    
+    try {
+        // Get current WQI data
+        const currentData = getWQIData(location);
+        const baseWQI = currentData.WQI;
+        const baseParameters = currentData.wqiData;
+        
+        // Generate historical data with realistic variations
+        for (let i = 0; i < days; i++) {
+            const date = new Date(today);
+            date.setDate(date.getDate() - i);
+            const dateStr = date.toISOString().split('T')[0];
+            
+            // Calculate variation factor (more variation for older dates)
+            const variationFactor = 1 + (Math.random() * 0.4 - 0.2) * (1 + i * 0.1);
+            
+            // Generate historical parameters with realistic variations
+            const historicalParameters = {};
+            Object.entries(baseParameters).forEach(([key, value]) => {
+                // Add some randomness but keep it within realistic bounds
+                const variation = 1 + (Math.random() * 0.3 - 0.15) * variationFactor;
+                historicalParameters[key] = Math.max(0, value * variation);
+            });
+            
+            historicalData.push({
+                date: dateStr,
+                wqi: Math.round(baseWQI * variationFactor),
+                parameters: historicalParameters
+            });
+        }
+        
+        // Sort data by date (newest first)
+        historicalData.sort((a, b) => new Date(b.date) - new Date(a.date));
+        
+    } catch (error) {
+        console.error('Error generating historical WQI data:', error);
+        // Fallback to local data with variations
+        const fallbackData = locationData[location] || locationData['Puttaparthi'];
+        
+        for (let i = 0; i < days; i++) {
+            const date = new Date(today);
+            date.setDate(date.getDate() - i);
+            const dateStr = date.toISOString().split('T')[0];
+            
+            // Generate variations for fallback data
+            const variationFactor = 1 + (Math.random() * 0.4 - 0.2) * (1 + i * 0.1);
+            const historicalParameters = {};
+            
+            Object.entries(fallbackData.wqiData).forEach(([key, value]) => {
+                const variation = 1 + (Math.random() * 0.3 - 0.15) * variationFactor;
+                historicalParameters[key] = Math.max(0, value * variation);
+            });
+            
+            historicalData.push({
+                date: dateStr,
+                wqi: Math.round(fallbackData.WQI * variationFactor),
+                parameters: historicalParameters
+            });
+        }
+        
+        // Sort data by date (newest first)
+        historicalData.sort((a, b) => new Date(b.date) - new Date(a.date));
+    }
+    
+    return historicalData;
+}
+
+// Function to render WQI trends line chart
+function renderWQITrendsChart(historicalData) {
+    const ctx = document.getElementById('wqiTrendsChart').getContext('2d');
+    
+    const data = {
+        labels: historicalData.map(d => d.date),
+        datasets: [{
+            label: 'WQI',
+            data: historicalData.map(d => d.wqi),
+            borderColor: '#36A2EB',
+            tension: 0.1
+        }]
+    };
+    
+    if (window.wqiTrendsChart) {
+        window.wqiTrendsChart.destroy();
+    }
+    
+    window.wqiTrendsChart = new Chart(ctx, {
+        type: 'line',
+        data: data,
+        options: {
+            responsive: true,
+            plugins: {
+                title: {
+                    display: true,
+                    text: 'WQI Trends (Last 10 Days)'
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true
+                }
+            }
+        }
+    });
+}
+
+// Function to update historical data tables
+function updateHistoricalDataTables(aqidata, wqidata) {
+    // Update AQI table
+    const aqiTableBody = document.querySelector('#aqiTable tbody');
+    if (aqiTableBody && aqidata) {
+        aqiTableBody.innerHTML = '';
+        aqidata.forEach(data => {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td>${data.date}</td>
+                <td>${data.pollutants.pm2_5?.toFixed(2) || 'N/A'}</td>
+                <td>${data.pollutants.pm10?.toFixed(2) || 'N/A'}</td>
+                <td>${data.pollutants.o3?.toFixed(2) || 'N/A'}</td>
+                <td>${data.pollutants.no2?.toFixed(2) || 'N/A'}</td>
+                <td>${data.pollutants.so2?.toFixed(2) || 'N/A'}</td>
+                <td>${data.pollutants.co?.toFixed(2) || 'N/A'}</td>
+                <td>${data.pollutants.nh3?.toFixed(2) || 'N/A'}</td>
+                <td>${data.pollutants.Pb?.toFixed(2) || 'N/A'}</td>
+            `;
+            aqiTableBody.appendChild(row);
+        });
+    }
+
+    // Update WQI table
+    const wqiTableBody = document.querySelector('#wqiTable tbody');
+    if (wqiTableBody && wqidata) {
+        wqiTableBody.innerHTML = '';
+        wqidata.forEach(data => {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td>${data.date}</td>
+                <td>${data.parameters.Temperature?.toFixed(2) || 'N/A'}</td>
+                <td>${data.parameters.Turbidity?.toFixed(2) || 'N/A'}</td>
+                <td>${data.parameters.pH?.toFixed(2) || 'N/A'}</td>
+                <td>${data.parameters.TDS?.toFixed(2) || 'N/A'}</td>
+                <td>${data.parameters.DO?.toFixed(2) || 'N/A'}</td>
+                <td>${data.parameters.BOD?.toFixed(2) || 'N/A'}</td>
+                <td>${data.parameters.Nutrients?.toFixed(2) || 'N/A'}</td>
+            `;
+            wqiTableBody.appendChild(row);
+        });
+    }
+}
+
+// Update the updateLocation function to include historical data
+async function updateLocation(location, date, time) {
+    try {
+        // Get current data
+        const coords = await getCoordinates(location);
+        const aqiData = await getAQIData(coords.lat, coords.lon, location);
+        const wqiData = getWQIData(location);
+        
+        // Get historical data
+        const historicalAQIData = await getHistoricalAQIData(location);
+        const historicalWQIData = await getHistoricalWQIData(location);
+        
+        // Update current data displays
+        updateLocationDetails(location, coords.lat, coords.lon, date, time);
+        
+        // Update composition charts
+        renderAQICompositionChart(aqiData.pollutants);
+        renderWQICompositionChart(wqiData.wqiData);
+        
+        // Update trends charts
+        renderAQITrendsChart(historicalAQIData);
+        renderWQITrendsChart(historicalWQIData);
+        
+        // Update historical data tables
+        updateHistoricalDataTables(historicalAQIData, historicalWQIData);
+        
+        showNotification('Location data updated successfully', 'success');
+    } catch (error) {
+        console.error('Error updating location:', error);
+        showNotification('Failed to update location data', 'error');
+    }
+}
+
