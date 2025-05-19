@@ -12,7 +12,7 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "predeploy": "npm run build",
     "deploy": "gh-pages -d pages",
-    "build": "echo 'No build step required'"
+    "build": "mkdir -p pages/css pages/js && cp -r css/* pages/css/ && cp -r js/* pages/js/"
   },
   "keywords": [],
   "author": "",
