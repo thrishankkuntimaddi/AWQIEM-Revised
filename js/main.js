@@ -1243,7 +1243,7 @@ function getAQISuggestions(aqi) {
     
     if (aqi <= 50) {
         suggestions.push({
-            text: 'Air quality is good. Enjoy outdoor activities.',
+                text: 'Air quality is good. Enjoy outdoor activities.',
             priority: 'low',
             icon: 'smile'
         });
@@ -1275,7 +1275,7 @@ function getWQISuggestions(wqi) {
     
     if (wqi >= 80) {
         suggestions.push({
-            text: 'Water quality is excellent. Safe for all uses.',
+                text: 'Water quality is excellent. Safe for all uses.',
             priority: 'low',
             icon: 'smile'
         });
@@ -1335,16 +1335,20 @@ function getSISuggestions(si) {
 }
 
 function updateSuggestions(aqi, wqi, si) {
-    const suggestionsList = document.getElementById('currentLocationSuggestions');
+    console.log('Updating suggestions with:', { aqi, wqi, si });
+    
+    const suggestionsList = document.getElementById('suggestions-list');
     if (!suggestionsList) {
         console.error('Suggestions container not found');
         return;
     }
 
+    // Get recommendations for each metric
     const aqiSuggestions = getAQISuggestions(aqi);
     const wqiSuggestions = getWQISuggestions(wqi);
     const siSuggestions = getSISuggestions(si);
 
+    // Create HTML for recommendations
     let html = '';
     
     // AQI Recommendations
@@ -1392,13 +1396,10 @@ function updateSuggestions(aqi, wqi, si) {
         </div>
     `;
 
-    // Add debug logging
-    console.log('Updating suggestions with:', { aqi, wqi, si });
-    
     // Update the suggestions container
     suggestionsList.innerHTML = html;
 
-    // Add CSS styles dynamically if they don't exist
+    // Add CSS styles if they don't exist
     if (!document.getElementById('suggestions-styles')) {
         const style = document.createElement('style');
         style.id = 'suggestions-styles';
@@ -1454,6 +1455,165 @@ function updateSuggestions(aqi, wqi, si) {
         `;
         document.head.appendChild(style);
     }
+}
+
+// Update the getAQISuggestions function to provide more detailed recommendations
+function getAQISuggestions(aqi) {
+    const suggestions = [];
+    
+    if (aqi <= 50) {
+        suggestions.push({
+            text: 'Air quality is good. Enjoy outdoor activities.',
+            priority: 'low',
+            icon: 'smile'
+        });
+        suggestions.push({
+            text: 'Continue maintaining good air quality practices.',
+            priority: 'low',
+            icon: 'check-circle'
+        });
+    } else if (aqi <= 100) {
+        suggestions.push({
+            text: 'Air quality is moderate. Sensitive groups should limit outdoor activities.',
+            priority: 'medium',
+            icon: 'exclamation-triangle'
+        });
+        suggestions.push({
+            text: 'Consider using air purifiers indoors.',
+            priority: 'medium',
+            icon: 'fan'
+        });
+    } else if (aqi <= 150) {
+        suggestions.push({
+            text: 'Air quality is unhealthy for sensitive groups. Limit outdoor activities.',
+            priority: 'high',
+            icon: 'exclamation-circle'
+        });
+        suggestions.push({
+            text: 'Wear masks when going outside.',
+            priority: 'high',
+            icon: 'mask'
+        });
+    } else {
+        suggestions.push({
+            text: 'Air quality is unhealthy. Avoid outdoor activities.',
+            priority: 'critical',
+            icon: 'times-circle'
+        });
+        suggestions.push({
+            text: 'Keep windows closed and use air purifiers.',
+            priority: 'critical',
+            icon: 'window-close'
+        });
+    }
+    
+    return suggestions;
+}
+
+// Update the getWQISuggestions function to provide more detailed recommendations
+function getWQISuggestions(wqi) {
+    const suggestions = [];
+    
+    if (wqi >= 80) {
+        suggestions.push({
+            text: 'Water quality is excellent. Safe for all uses.',
+            priority: 'low',
+            icon: 'smile'
+        });
+        suggestions.push({
+            text: 'Continue maintaining good water quality practices.',
+            priority: 'low',
+            icon: 'check-circle'
+        });
+    } else if (wqi >= 60) {
+        suggestions.push({
+            text: 'Water quality is good. Safe for most uses.',
+            priority: 'medium',
+            icon: 'exclamation-triangle'
+        });
+        suggestions.push({
+            text: 'Consider regular water quality monitoring.',
+            priority: 'medium',
+            icon: 'vial'
+        });
+    } else if (wqi >= 40) {
+        suggestions.push({
+            text: 'Water quality is fair. Some treatment may be needed.',
+            priority: 'high',
+            icon: 'exclamation-circle'
+        });
+        suggestions.push({
+            text: 'Implement water treatment measures.',
+            priority: 'high',
+            icon: 'filter'
+        });
+    } else {
+        suggestions.push({
+            text: 'Water quality is poor. Treatment required before use.',
+            priority: 'critical',
+            icon: 'times-circle'
+        });
+        suggestions.push({
+            text: 'Immediate water treatment and monitoring needed.',
+            priority: 'critical',
+            icon: 'water'
+        });
+    }
+    
+    return suggestions;
+}
+
+// Update the getSISuggestions function to provide more detailed recommendations
+function getSISuggestions(si) {
+    const suggestions = [];
+    
+    if (si >= 80) {
+        suggestions.push({
+            text: 'Excellent sustainability. Continue current practices.',
+            priority: 'low',
+            icon: 'smile'
+        });
+        suggestions.push({
+            text: 'Share best practices with others.',
+            priority: 'low',
+            icon: 'share-alt'
+        });
+    } else if (si >= 60) {
+        suggestions.push({
+            text: 'Good sustainability. Minor improvements possible.',
+            priority: 'medium',
+            icon: 'exclamation-triangle'
+        });
+        suggestions.push({
+            text: 'Consider implementing additional eco-friendly measures.',
+            priority: 'medium',
+            icon: 'leaf'
+        });
+    } else if (si >= 40) {
+        suggestions.push({
+            text: 'Fair sustainability. Significant improvements needed.',
+            priority: 'high',
+            icon: 'exclamation-circle'
+        });
+        suggestions.push({
+            text: 'Develop and implement a sustainability action plan.',
+            priority: 'high',
+            icon: 'clipboard-list'
+        });
+    } else {
+        suggestions.push({
+            text: 'Poor sustainability. Major changes required.',
+            priority: 'critical',
+            icon: 'times-circle'
+        });
+        suggestions.push({
+            text: 'Immediate action needed to improve environmental practices.',
+            priority: 'critical',
+            icon: 'exclamation'
+        });
+    }
+    
+    return suggestions;
 }
 
 function getAQIColor(aqi) {
@@ -1839,13 +1999,13 @@ function renderAQIChart(pollutants) {
         type: 'bar',
         data: {
             labels: labels,
-            datasets: [{
+        datasets: [{
                 label: 'Pollutant Levels',
                 data: values,
                 backgroundColor: colors,
                 borderColor: colors,
-                borderWidth: 1
-            }]
+            borderWidth: 1
+        }]
         },
         options: {
             responsive: true,
@@ -1875,13 +2035,13 @@ function renderWQIChart(wqiData) {
         type: 'bar',
         data: {
             labels: labels,
-            datasets: [{
+        datasets: [{
                 label: 'Water Quality Parameters',
                 data: values,
                 backgroundColor: colors,
                 borderColor: colors,
-                borderWidth: 1
-            }]
+            borderWidth: 1
+        }]
         },
         options: {
             responsive: true,
@@ -2366,9 +2526,11 @@ function renderWQITrendsChart(historicalData) {
 
 // Function to update historical data tables
 function updateHistoricalDataTables(aqidata, wqidata) {
+    console.log('Updating historical data tables:', { aqidata, wqidata });
+    
     // Update AQI table
     const aqiTableBody = document.querySelector('#aqiTable tbody');
-    if (aqiTableBody && aqidata) {
+    if (aqiTableBody && aqidata && aqidata.length > 0) {
         aqiTableBody.innerHTML = '';
         aqidata.forEach(data => {
             const row = document.createElement('tr');
@@ -2385,11 +2547,16 @@ function updateHistoricalDataTables(aqidata, wqidata) {
             `;
             aqiTableBody.appendChild(row);
         });
+    } else {
+        console.warn('AQI table or data not available');
+        if (aqiTableBody) {
+            aqiTableBody.innerHTML = '<tr><td colspan="9">No historical AQI data available</td></tr>';
+        }
     }
 
     // Update WQI table
     const wqiTableBody = document.querySelector('#wqiTable tbody');
-    if (wqiTableBody && wqidata) {
+    if (wqiTableBody && wqidata && wqidata.length > 0) {
         wqiTableBody.innerHTML = '';
         wqidata.forEach(data => {
             const row = document.createElement('tr');
@@ -2405,6 +2572,11 @@ function updateHistoricalDataTables(aqidata, wqidata) {
             `;
             wqiTableBody.appendChild(row);
         });
+    } else {
+        console.warn('WQI table or data not available');
+        if (wqiTableBody) {
+            wqiTableBody.innerHTML = '<tr><td colspan="8">No historical WQI data available</td></tr>';
+        }
     }
 }
 
