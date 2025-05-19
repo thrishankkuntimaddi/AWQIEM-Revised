@@ -877,7 +877,8 @@ function getUserLocation() {
             });
 
             // Get AQI data directly from OpenWeather API
-            fetch(`https://api.openweathermap.org/data/2.5/air_pollution?lat=${lat}&lon=${lon}&appid=${API_KEY}`)
+            const apiKey = window.config ? window.config.OPENWEATHER_API_KEY : API_KEY;
+            fetch(`https://api.openweathermap.org/data/2.5/air_pollution?lat=${lat}&lon=${lon}&appid=${apiKey}`)
                 .then(response => {
                     if (!response.ok) throw new Error('Failed to fetch AQI data');
                     return response.json();
@@ -1395,7 +1396,7 @@ function updateSuggestions(aqi, wqi, si) {
             </div>
         </div>
     `;
-
+    
     // Update the suggestions container
     suggestionsList.innerHTML = html;
 
@@ -1463,7 +1464,7 @@ function getAQISuggestions(aqi) {
     
     if (aqi <= 50) {
         suggestions.push({
-            text: 'Air quality is good. Enjoy outdoor activities.',
+                text: 'Air quality is good. Enjoy outdoor activities.',
             priority: 'low',
             icon: 'smile'
         });
@@ -1516,7 +1517,7 @@ function getWQISuggestions(wqi) {
     
     if (wqi >= 80) {
         suggestions.push({
-            text: 'Water quality is excellent. Safe for all uses.',
+                text: 'Water quality is excellent. Safe for all uses.',
             priority: 'low',
             icon: 'smile'
         });
@@ -2035,7 +2036,7 @@ function renderWQIChart(wqiData) {
         type: 'bar',
         data: {
             labels: labels,
-        datasets: [{
+       datasets: [{
                 label: 'Water Quality Parameters',
                 data: values,
                 backgroundColor: colors,
