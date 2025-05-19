@@ -3,7 +3,7 @@
     "papaparse": "^5.5.2"
   },
   "devDependencies": {
-    "gh-pages": "^6.3.0"
+    "gh-pages": "^6.1.1"
   },
   "name": "awqiem-revised",
   "version": "1.0.0",
@@ -11,7 +11,7 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "predeploy": "npm run build",
-    "deploy": "gh-pages -d .",
+    "deploy": "gh-pages -d pages",
     "build": "echo 'No build step required'"
   },
   "keywords": [],
