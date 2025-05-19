@@ -1,0 +1,80 @@
+const data = [
+  {
+    Location: 'Thiruvananthapuramu',
+    Status: 'Good',
+    'PM2.5': 11,
+    PM10: 25,
+    NO2: 34,
+    SO2: 23,
+    CO: 10,
+    O3: 21,
+    NH3: 17,
+    Pb: 15,
+    AQI: 34
+  },
+  {
+    Location: 'Kochi',
+    Status: 'Satisfactory',
+    'PM2.5': 30,
+    PM10: 12,
+    NO2: 23,
+    SO2: 56,
+    CO: 98,
+    O3: 45,
+    NH3: 43,
+    Pb: 9,
+    AQI: 98
+  },
+  {
+    Location: 'Delhi',
+    Status: 'Poor',
+    'PM2.5': 99,
+    PM10: 225,
+    NO2: 19,
+    SO2: 113,
+    CO: 34,
+    O3: 45,
+    NH3: 76,
+    Pb: 97,
+    AQI: 225
+  },
+  {
+    Location: 'Chennai',
+    Status: 'Satisfactory',
+    'PM2.5': 23,
+    PM10: 54,
+    NO2: 45,
+    SO2: 67,
+    CO: 28,
+    O3: 42,
+    NH3: 33,
+    Pb: 19,
+    AQI: 67
+  },
+  {
+    Location: 'Hyderabad',
+    Status: 'Satisfactory',
+    'PM2.5': 24,
+    PM10: 36,
+    NO2: 35,
+    SO2: 75,
+    CO: 45,
+    O3: 75,
+    NH3: 87,
+    Pb: 34,
+    AQI: 87
+  },
+  {
+    Location: 'Mumbai',
+    Status: 'Moderate',
+    'PM2.5': 14,
+    PM10: 24,
+    NO2: 65,
+    SO2: 86,
+    CO: 56,
+    O3: 64,
+    NH3: 114,
+    Pb: 38,
+    AQI: 114
+  }
+];

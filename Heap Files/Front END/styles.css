@@ -1,0 +1,139 @@
+.div1{ 
+    height: 35px; 
+    width: auto; 
+    padding: 0px;
+    background-color: rgb(121, 121, 121); 
+    text-align: left; 
+    color: rgb(255, 255, 255); 
+    font-size: 15px;
+    } 
+.abs {
+    float: left;
+    font-size: 25px;
+    width: 600px;
+    margin-top: 30px;
+    background-color: aliceblue;
+    text-align: center;
+}
+.qwerty{
+    width: 108px;
+    height:30px;
+}
+.select-with-padding {
+    width: 100px;
+    height: 30px;
+    margin-top: 10px;
+}
+#container {
+    background-color: #f0f0f0;
+    border: 5px solid #ccc;
+    padding: 30px;
+    top: 57px; 
+    right: 9px; 
+    z-index: 1200; 
+    width: 250px; 
+    height: 4000px;
+    max-block-size: 35px;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.2);
+} 
+#container1 {
+    background-color: #f0f0f0;
+    border: 1px solid #070707;
+    padding: 10px;
+    height: 150px;
+    width: auto;
+    margin: 0px; /* Center the container horizontally */
+    max-width: 580px; /* Set a maximum width for the container */
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.2);
+    margin-top: 10px;
+    float: bottom;
+
+}
+h1 { 
+    margin-top: 0px;
+}            
+
+/* styles.css */
+.search-container {
+    display: flex;
+    justify-content: space-between; /* Adjust this as needed */
+    align-items: center;
+    padding: 10px;
+    margin-top: 0px;
+  }
+  
+  .search-bar {
+    width: 200px; /* Adjust the width as needed */
+    padding: 10px;
+    height: 10px;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    margin-right: 10px; /* Add margin for spacing between search bars */
+    margin-top: 2px;
+  }
+  
+  .content {
+    flex: 1; /* Allow the content to grow and fill available space */
+    padding: 10px; /* Add padding for spacing */
+  }
+
+  .container23 {
+    display: flex; /* Use flexbox for layout */
+    align-items: flex-start; /* Align items at the top of the container */
+    float: left;
+  }
+
+  .color_bar {
+    width: 200px; /* Adjust the width as needed */
+    height: 20px; /* Adjust the height as needed */
+    background: linear-gradient(to right, red, yellow, green, blue); /* Define the gradient colors */
+  }
+  
+  /* styles.css */
+/* styles.css */
+.large {
+  width: 150px; /* Adjust the width as needed */
+  height: 15px; /* Adjust the height as needed */
+  padding: 13px 20px; /* Adjust padding for extra space around the text */
+  font-size: 18px; /* Adjust the font size as needed */
+  /* Other CSS styles for the button */
+  line-height: 10px;
+  text-align: center;
+}
+
+.rainbow-bar {
+  width: 100%; /* Set the width of the color bar */
+  height: 50px; /* Set the height of the color bar */
+  background: linear-gradient(to right, 
+      red, orange, yellow, green, blue, indigo, violet); /* Create a rainbow gradient */
+  position: relative; /* Allow absolute positioning of the arrow */
+}
+
+.arrow {
+  width: 20px; /* Set the width of the arrow */
+  height: 20px; /* Set the height of the arrow */
+  background-color: white; /* Set the initial color of the arrow */
+  position: absolute; /* Position the arrow absolutely within the bar */
+  top: 50%; /* Align the arrow vertically in the middle of the bar */
+  transform: translateY(-50%); /* Center the arrow vertically */
+  transition: background-color 0.3s ease; /* Add a smooth color transition */
+} 
+
+.emptybox {
+  width: 1000px; /* Adjust the width as needed */
+  height: 500px; /* Adjust the height as needed */
+  border: 1px solid #000; /* Add a border for visualization (optional) */
+}
+
+.Colorrr {
+  background-color: #ade8ff;
+  height: 150px;
+  float: bottom;
+}
+
+
+.class123 {
+  padding-left: 200px;
+  width:600px;
+  float: left;
+}

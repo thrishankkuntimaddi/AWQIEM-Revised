@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pie Charts for Locations</title>
+    <!-- Include Chart.js library -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div style="width: 80%; margin: 0 auto;">
+        <canvas id="locationPieChart"></canvas>
+    </div>
+
+    <script>
+        // Data for multiple locations
+        const locationsData = [
+        {
+                Location: 'Thiruvananthapuramu',
+                Status: 'Good',
+                'PM2.5': 11,
+                PM10: 25,
+                NO2: 34,
+                SO2: 23,
+                CO: 10,
+                O3: 21,
+                NH3: 17,
+                Pb: 15,
+                AQI: 34
+            },
+            {
+                Location: 'Kochi',
+                Status: 'Satisfactory',
+                PM2_5: 30,
+                PM10: 12,
+                NO2: 23,
+                SO2: 56,
+                CO: 98,
+                O3: 45,
+                NH3: 43,
+                Pb: 9
+            },
+            {
+                Location: 'Delhi',
+                Status: 'Poor',
+                PM2_5: 99,
+                PM10: 225,
+                NO2: 19,
+                SO2: 113,
+                CO: 34,
+                O3: 45,
+                NH3: 76,
+                Pb: 97,
+                AQI: 225
+            },
+            {
+                Location: 'Chennai',
+                Status: 'Satisfactory',
+                PM2_5: 23,
+                PM10: 54,
+                NO2: 45,
+                SO2: 67,
+                CO: 28,
+                O3: 42,
+                NH3: 33,
+                Pb: 19,
+                AQI: 67
+            },
+            {
+                Location: 'Hyderabad',
+                Status: 'Satisfactory',
+                PM2_5: 24,
+                PM10: 36,
+                NO2: 35,
+                SO2: 75,
+                CO: 45,
+                O3: 75,
+                NH3: 87,
+                Pb: 34,
+                AQI: 87
+            },
+            {
+                Location: 'Mumbai',
+                Status: 'Moderate',
+                PM2_5: 14,
+                PM10: 24,
+                NO2: 65,
+                SO2: 86,
+                CO: 56,
+                O3: 64,
+                NH3: 114,
+                Pb: 38,
+                AQI: 114
+            }
+        ];
+
+        // Function to create a pie chart for a location
+        function createPieChart(locationName) {
+            const locationData = locationsData.find(data => data.Location === locationName);
+
+            if (!locationData) {
+                console.error(`Data not found for location: ${locationName}`);
+                return;
+            }
+
+            const ctx = document.getElementById('locationPieChart').getContext('2d');
+            const labels = Object.keys(locationData).slice(2); // Exclude Location and Status
+            const values = labels.map(label => locationData[label]);
+
+            new Chart(ctx, {
+                type: 'pie',
+                data: {
+                    labels,
+                    datasets: [{
+                        data: values,
+                        backgroundColor: [
+                            'rgba(255, 99, 132, 0.6)',
+                            'rgba(54, 162, 235, 0.6)',
+                            'rgba(255, 206, 86, 0.6)',
+                            'rgba(75, 192, 192, 0.6)',
+                            'rgba(153, 102, 255, 0.6)',
+                            'rgba(255, 159, 64, 0.6)',
+                            'rgba(255, 255, 0, 0.6)',
+                            'rgba(0, 255, 0, 0.6)'
+                        ]
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    title: {
+                        display: true,
+                        text: `AQI Distribution for ${locationData.Location}`
+                    }
+                }
+            });
+        }
+
+        // Usage example:
+        createPieChart('Kochi'); // You can call this function with different location names
+    </script>
+</body>
+</html>

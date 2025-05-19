@@ -1,0 +1,118 @@
+<!DOCTYPE html> 
+<html> 
+    <head> 
+        <link rel="stylesheet" type="text/css" href="styles.css">
+        <title>AWQI</title>
+        <script>
+            function performSearch() {
+              const searchTerm = document.getElementById("searchInput").value;
+              // Implement your search logic here
+              alert("Searching for: " + searchTerm);
+            }
+        </script>
+        <style>
+            .search {
+padding: 6px;
+border: 1px solid #040404;
+background-color: #ffffff;
+border-radius: 5px;
+width:200px;
+margin-right: 10px;
+margin-top: 2px;
+}
+        </style>
+    </head> 
+    <body> 
+ 
+        <div> 
+            <div><label class="abs" style="padding: 1px;">Location details</label><br></div>
+            <div class="search-container">
+                <input type="text" class="search-bar" placeholder="State">
+                <div>
+                    <select name="Capital" id="mySelect" class="search">
+                        <option value="Thiruvananthapuramu"> Thiruvananthapuramu </option> 
+                        <option value="Kochi">Kochi</option> 
+                        <option value="Delhi">Delhi</option> 
+                        <option value="Chennai">Chennai</option> 
+                        <option value="Hyderabad"> Hyderabad </option> 
+                        <option value="Mumbai">Mumbai</option> 
+                    </select>         
+                </div>
+                <input type="text" class="search-bar" placeholder="Date">
+                <input type="text" class="search-bar" placeholder="Time">
+
+                <button id="myButton">Search</button>
+
+                <script>
+                    var searchInput = document.getElementById("mySelect");
+var searchoutput = document.getElementById("myButton");
+searchoutput.addEventListener("click", function() {
+let selectValue = searchInput.value;
+var dataset = ["Thiruvananthapuramu","Kochi","Delhi","Chennai","Hyderabad","Mumbai"]
+var valueToCheck = selectValue;
+if (dataset.includes(valueToCheck)) {
+    alert(selectValue);
+} else {
+    alert("NOT");
+}
+});
+
+                </script>
+                <br>
+            </div>
+            <div>
+                <div class="container23">
+                <iframe src="https://www.google.com/maps/embed?pb=!1m14!1m12!1m3!1d1554092.339439457!2d79.92966668393599!3d12.869651740693842!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!5e0!3m2!1sen!2sin!4v1695661032360!5m2!1sen!2sin" width="600" height="312" style="border:0;" allowfullscreen="" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>  
+                </div>
+                <div class="awqi">
+                    <style>
+                        .enlarge {
+                            width: 400px; /* Adjust the width as needed */
+                            height: 100px; /* Adjust the height as needed */
+                            /* Other CSS styles for the enlarged cell */
+                            font-size: 50px;
+                            float: bottom;
+                           border:none; 
+                        }
+                        table {
+                            border-collapse: collapse;
+                            float: bottom;
+                        }
+                    </style>
+                    <table>
+                        <tr >
+                            <td class="enlarge">AQI : 23</td>
+                            <td class="enlarge">WQI : 20</td>
+                        </tr>
+                        <tr>
+                            <td class="enlarge"> AQI Remark </td>
+                            <td class="enlarge"> WQI Remark </td>
+                        </tr>
+                        <tr>
+                            <td class="enlarge">Description of AQI</td>
+                            <td class="enlarge">Description of WQI</td>
+                        </tr>
+                    </table>
+                    
+                </div> 
+                <br>
+            </div>
+
+        <br>
+        </div>
+
+        <div class="Colorrr">
+            <h1>Notice:</h1>
+
+        </div>
+        <br>
+        <h1 class="name123">Air & Water Quality Statistics</h1>
+        <div>
+            <div>
+                <img src="IMG_20230917_105.png" width="750px" height="300px">
+                <img src="/Users/thrishank/Desktop/wqi.jpeg" width="500px" height="280px">
+            </div>
+        </div>
+        
+    </body> 
+</html> 
