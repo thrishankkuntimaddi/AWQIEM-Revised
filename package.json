@@ -2,14 +2,20 @@
   "dependencies": {
     "papaparse": "^5.5.2"
   },
+  "devDependencies": {
+    "gh-pages": "^6.3.0"
+  },
   "name": "awqiem-revised",
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "predeploy": "npm run build",
+    "deploy": "gh-pages -d .",
+    "build": "echo 'No build step required'"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "description": ""
+  "description": "Air and Water Quality Index and Environmental Monitoring System"
 }
